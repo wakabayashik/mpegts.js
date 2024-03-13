@@ -1,6 +1,6 @@
 import BaseDemuxer from './base-demuxer';
 declare class TSDemuxer extends BaseDemuxer {
-    private readonly TAG;
+    protected readonly TAG: string;
     private config_;
     private ts_packet_size_;
     private sync_offset_;
@@ -29,7 +29,7 @@ declare class TSDemuxer extends BaseDemuxer {
     private loas_previous_frame;
     private video_track_;
     private audio_track_;
-    constructor(probe_data: any, config: any);
+    constructor(probe_data: any, config: any, TAG: string);
     destroy(): void;
     static probe(buffer: ArrayBuffer): {
         needMoreData: boolean;

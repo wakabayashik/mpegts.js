@@ -24,6 +24,7 @@ import TransmuxingController from './transmuxing-controller.js';
 import TransmuxingEvents from './transmuxing-events';
 import TransmuxingWorker from './transmuxing-worker.js';
 import MediaInfo from './media-info.js';
+import MediaedgeTransmuxingController from '../mediaedge/transmuxing-controller.js';
 
 class Transmuxer {
 
@@ -45,10 +46,20 @@ class Transmuxer {
             } catch (error) {
                 Log.e(this.TAG, 'Error while initialize transmuxing worker, fallback to inline transmuxing');
                 this._worker = null;
-                this._controller = new TransmuxingController(mediaDataSource, config);
+                if (mediaDataSource.type === 'mediaedge') {
+                    mediaDataSource.type = 'mpegts';
+                    this._controller = new MediaedgeTransmuxingController(mediaDataSource, config);
+                } else {
+                    this._controller = new TransmuxingController(mediaDataSource, config);
+                }
             }
         } else {
-            this._controller = new TransmuxingController(mediaDataSource, config);
+            if (mediaDataSource.type === 'mediaedge') {
+                mediaDataSource.type = 'mpegts';
+                this._controller = new MediaedgeTransmuxingController(mediaDataSource, config);
+            } else {
+                this._controller = new TransmuxingController(mediaDataSource, config);
+            }
         }
 
         if (this._controller) {

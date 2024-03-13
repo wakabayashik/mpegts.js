@@ -94,7 +94,7 @@ type AudioData = {
 
 class TSDemuxer extends BaseDemuxer {
 
-    private readonly TAG: string = 'TSDemuxer';
+    protected readonly TAG: string = 'TSDemuxer';
 
     private config_: any;
     private ts_packet_size_: number;
@@ -151,8 +151,9 @@ class TSDemuxer extends BaseDemuxer {
     private video_track_ = {type: 'video', id: 1, sequenceNumber: 0, samples: [], length: 0};
     private audio_track_ = {type: 'audio', id: 2, sequenceNumber: 0, samples: [], length: 0};
 
-    public constructor(probe_data: any, config: any) {
+    public constructor(probe_data: any, config: any, TAG: string) {
         super();
+        this.TAG = TAG || this.TAG;
 
         this.ts_packet_size_ = probe_data.ts_packet_size;
         this.sync_offset_ = probe_data.sync_offset;

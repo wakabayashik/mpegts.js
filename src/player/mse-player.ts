@@ -37,8 +37,9 @@ class MSEPlayer {
         if (typeLowerCase !== 'mse'
                 && typeLowerCase !== 'mpegts'
                 && typeLowerCase !== 'm2ts'
-                && typeLowerCase !== 'flv') {
-            throw new InvalidArgumentException('MSEPlayer requires an mpegts/m2ts/flv MediaDataSource input!');
+                && typeLowerCase !== 'flv'
+                && typeLowerCase !== 'mediaedge') {
+            throw new InvalidArgumentException('MSEPlayer requires an mpegts/m2ts/flv/mediaedge MediaDataSource input!');
         }
 
         if (config && config.enableWorkerForMSE && PlayerEngineDedicatedThread.isSupported()) {
