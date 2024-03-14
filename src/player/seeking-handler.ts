@@ -21,24 +21,26 @@ import { IDRSampleList } from '../core/media-segment-info';
 
 class SeekingHandler {
 
-    private readonly TAG: string = 'SeekingHandler';
+    protected readonly TAG: string = 'SeekingHandler';
 
     private _config: any = null;
-    private _media_element: HTMLMediaElement = null;
+    protected _media_element: HTMLMediaElement = null;
     private _always_seek_keyframe: boolean = false;
-    private _on_unbuffered_seek: (milliseconds: number) => void = null;
+    protected _on_unbuffered_seek: (milliseconds: number) => void = null;
 
-    private _request_set_current_time: boolean = false;
+    protected _request_set_current_time: boolean = false;
     private _seek_request_record_clocktime?: number = null;
     private _idr_sample_list: IDRSampleList = new IDRSampleList();
 
-    private e?: any = null;
+    protected e?: any = null;
 
     public constructor(
         config: any,
         media_element: HTMLMediaElement,
-        on_unbuffered_seek: (milliseconds: number) => void
+        on_unbuffered_seek: (milliseconds: number) => void,
+        TAG: string = null
     ) {
+        this.TAG = TAG || this.TAG;
         this._config = config;
         this._media_element = media_element;
         this._on_unbuffered_seek = on_unbuffered_seek;
@@ -113,7 +115,7 @@ class SeekingHandler {
     }
 
     // Handle seeking request from browser's progress bar or HTMLMediaElement.currentTime setter
-    private _onMediaSeeking(e: Event): void {
+    protected _onMediaSeeking(e: Event): void {
         if (this._request_set_current_time) {
             this._request_set_current_time = false;
             return;
@@ -174,7 +176,7 @@ class SeekingHandler {
         }
     }
 
-    private _isPositionBuffered(seconds: number): boolean {
+    protected _isPositionBuffered(seconds: number): boolean {
         const buffered = this._media_element.buffered;
 
         for (let i = 0; i < buffered.length; i++) {
@@ -192,7 +194,7 @@ class SeekingHandler {
         return this._idr_sample_list.getLastSyncPointBeforeDts(dts);
     }
 
-    private static _getClockTime(): number {
+    protected static _getClockTime(): number {
         if (self.performance && self.performance.now) {
             return self.performance.now();
         } else {

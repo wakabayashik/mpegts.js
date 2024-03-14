@@ -47,7 +47,6 @@ class Transmuxer {
                 Log.e(this.TAG, 'Error while initialize transmuxing worker, fallback to inline transmuxing');
                 this._worker = null;
                 if (mediaDataSource.type === 'mediaedge') {
-                    mediaDataSource.type = 'mpegts';
                     this._controller = new MediaedgeTransmuxingController(mediaDataSource, config);
                 } else {
                     this._controller = new TransmuxingController(mediaDataSource, config);
@@ -55,7 +54,6 @@ class Transmuxer {
             }
         } else {
             if (mediaDataSource.type === 'mediaedge') {
-                mediaDataSource.type = 'mpegts';
                 this._controller = new MediaedgeTransmuxingController(mediaDataSource, config);
             } else {
                 this._controller = new TransmuxingController(mediaDataSource, config);

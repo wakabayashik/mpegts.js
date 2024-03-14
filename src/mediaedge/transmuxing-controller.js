@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Bilibili. All Rights Reserved.
+ * Copyright (C) 2024 wakabayashik. All Rights Reserved.
  *
- * @author zheng qian <xqq@xqq.im>
+ * @author wakabayashik (https://github.com/wakabayashik)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,8 @@
  * limitations under the License.
  */
 
-import EventEmitter from 'events';
-import Log from '../utils/logger.js';
-import Browser from '../utils/browser.js';
-import MediaInfo from '../core/media-info.js';
-import FLVDemuxer from '../demux/flv-demuxer.js';
-import TSDemuxer from '../demux/ts-demuxer';
 import MP4Remuxer from '../remux/mp4-remuxer.js';
-import DemuxErrors from '../demux/demux-errors.js';
 import MediaedgeIOController from './io-controller.js';
-import TransmuxingEvents from '../core/transmuxing-events';
-import {LoaderStatus, LoaderErrors} from '../io/loader.js';
 import TransmuxingController from '../core/transmuxing-controller.js';
 import MediaedgeTSDemuxer from './ts-demuxer';
 
@@ -37,19 +28,23 @@ class MediaedgeTransmuxingController extends TransmuxingController {
     constructor(mediaDataSource, config) {
         super(mediaDataSource, config);
         this.TAG = 'MediaedgeTransmuxingController';
-        console.debug(this.TAG, 'constructor', mediaDataSource, config);
+        // console.debug(this.TAG, 'constructor', mediaDataSource, config);
+        this.position = null;
+        this.duration = null;
+        this.timeProgressing = false;
     }
 
-    _loadSegment(segmentIndex, optionalFrom) {
+    /*override*/ _loadSegment(segmentIndex, optionalFrom) {
         this._currentSegmentIndex = segmentIndex;
-        let dataSource = this._mediaDataSource.segments[segmentIndex];
+        const dataSource = this._mediaDataSource.segments[segmentIndex];
 
-        let ioctl = this._ioctl = new MediaedgeIOController(dataSource, this._config, segmentIndex);
+        const ioctl = this._ioctl = new MediaedgeIOController(dataSource, this._config, segmentIndex);
         ioctl.onError = this._onIOException.bind(this);
         ioctl.onSeeked = this._onIOSeeked.bind(this);
         ioctl.onComplete = this._onIOComplete.bind(this);
         ioctl.onRedirect = this._onIORedirect.bind(this);
         ioctl.onRecoveredEarlyEof = this._onIORecoveredEarlyEof.bind(this);
+        ioctl.onHeaderArrival = (...args) => this._onHeaderArrival(...args);
 
         if (optionalFrom) {
             this._demuxer.bindDataSource(this._ioctl);
@@ -60,8 +55,24 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         ioctl.open(optionalFrom);
     }
 
-    _setupTSDemuxerRemuxer(probeData) {
-        let demuxer = this._demuxer = new MediaedgeTSDemuxer(probeData, this._config);
+    /*override*/ seek(milliseconds) {
+        // console.debug(this.TAG, 'seek', milliseconds);
+
+        const targetSegmentIndex = this._searchSegmentIndexContains(milliseconds);
+        // const targetSegmentInfo = this._mediaInfo?.segments[targetSegmentIndex];
+        this._internalAbort();
+        this._remuxer.seek(milliseconds);
+        this._remuxer.insertDiscontinuity();
+        this._demuxer.resetMediaInfo();
+        this._demuxer.timestampBase = this._mediaDataSource.segments[targetSegmentIndex].timestampBase;
+        this._loadSegment(targetSegmentIndex, milliseconds);
+        this._pendingResolveSeekPoint = milliseconds;
+        this._reportSegmentMediaInfo(targetSegmentIndex);
+        this._enableStatisticsReporter();
+    }
+
+    /*override*/ _setupTSDemuxerRemuxer(probeData) {
+        let demuxer = this._demuxer = new MediaedgeTSDemuxer(probeData, this._config, this.duration);
 
         if (!this._remuxer) {
             this._remuxer = new MP4Remuxer(this._config);
@@ -83,6 +94,40 @@ class MediaedgeTransmuxingController extends TransmuxingController {
 
         this._remuxer.onInitSegment = this._onRemuxerInitSegmentArrival.bind(this);
         this._remuxer.onMediaSegment = this._onRemuxerMediaSegmentArrival.bind(this);
+    }
+
+    _onHeaderArrival(headers) {
+        // headers.forEach((val, key) => console.debug(this.TAG, '_onHeaderArrival', `${key}: ${val}`));
+        const server = headers.get('x-mediaedge-server');
+        const scale = headers.get('x-mediaedge-scale');
+        const speed = headers.get('x-mediaedge-speed');
+        const range = headers.get('x-mediaedge-range');
+        const mediaRange = headers.get('x-mediaedge-media-range');
+        const mediaProps = headers.get('x-mediaedge-media-properties');
+        if (typeof range == 'string' && range.slice(0,4) === 'npt=') { // Normal Play Time (RFC2326, RFC7826)
+            let mr = range.match(/^npt=([0-9\.]*)\-([0-9\.]*|\s*)(?:;elapse=([0-9\.]+))?$/);
+            let mr1 = +mr[1];
+            let mr2 = +mr[2];
+            let mr3 = +mr[3];
+            if (!isNaN(mr1) && isFinite(mr1)) {
+                this.position = mr1 * 1000; // to millisec
+                if (this._pendingResolveSeekPoint !== null) {
+                    this._pendingResolveSeekPoint = this.position; // update seek point with server response
+                }
+            }
+            if (mr2 == 0 && mr3 && !isNaN(mr3) && isFinite(mr3)) {
+                this.timeProgressing = true;
+            }
+            if (!isNaN(mr2) && isFinite(mr2) && mr2 > 0) {
+                this.duration = mr2 * 1000; // to millisec
+            } else if (typeof mediaRange == 'string') {
+                let mr = mediaRange.match(/^npt=([0-9\.]*)\-([0-9\.]*)$/);
+                let mr2 = +mr[2];
+                if (!isNaN(mr2) && isFinite(mr2)) {
+                    this.duration = mr2 * 1000; // to millisec
+                }
+            }
+        }
     }
 
 }

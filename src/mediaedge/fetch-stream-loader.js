@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Bilibili. All Rights Reserved.
+ * Copyright (C) 2024 wakabayashik. All Rights Reserved.
  *
- * @author zheng qian <xqq@xqq.im>
+ * @author wakabayashik (https://github.com/wakabayashik)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,6 @@
  * limitations under the License.
  */
 
-// import Log from '../utils/logger.js';
-// import Browser from '../utils/browser.js';
-// import {BaseLoader, LoaderStatus, LoaderErrors} from '../io/loader.js';
-// import {RuntimeException} from '../utils/exception.js';
 import FetchStreamLoader from '../io/fetch-stream-loader.js';
 
 /* fetch + stream IO loader. Currently working on chrome 43+.
@@ -33,7 +29,20 @@ class MediaedgeFetchStreamLoader extends FetchStreamLoader {
     constructor(seekHandler, config) {
         super(seekHandler, config);
         this.TAG = 'MediaedgeFetchStreamLoader';
-        console.debug(this.TAG, seekHandler, config);
+        // console.debug(this.TAG, seekHandler, config);
+        this._onHeaderArrival = null;
+    }
+
+    get onHeaderArrival() {
+        return this._onHeaderArrival ?? (() => {});
+    }
+
+    set onHeaderArrival(value) {
+        this._onHeaderArrival = value;
+    }
+
+    /*override*/ _fetchDone(res) {
+        this.onHeaderArrival(res.headers);
     }
 
 }

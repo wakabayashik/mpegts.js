@@ -33,6 +33,7 @@ import LoadingController from './loading-controller';
 import StartupStallJumper from './startup-stall-jumper';
 import LiveLatencyChaser from './live-latency-chaser';
 import LiveLatencySynchronizer from './live-latency-synchronizer';
+import MediaedgeSeekingHandler from '../mediaedge/seeking-handler';
 
 class PlayerEngineMainThread implements PlayerEngine {
 
@@ -211,6 +212,9 @@ class PlayerEngineMainThread implements PlayerEngine {
         });
         this._transmuxer.on(TransmuxingEvents.MEDIA_INFO, (mediaInfo: MediaInfo) => {
             this._media_info = mediaInfo;
+            if (this._seeking_handler instanceof MediaedgeSeekingHandler) {
+                (this._seeking_handler as MediaedgeSeekingHandler).isLive = !this._media_info?.duration;
+            }
             this._emitter.emit(PlayerEvents.MEDIA_INFO, Object.assign({}, mediaInfo));
         });
         this._transmuxer.on(TransmuxingEvents.STATISTICS_INFO, (statInfo: any) => {
@@ -250,11 +254,11 @@ class PlayerEngineMainThread implements PlayerEngine {
             this._emitter.emit(PlayerEvents.PES_PRIVATE_DATA_ARRIVED, private_data);
         });
 
-        this._seeking_handler = new SeekingHandler(
-            this._config,
-            this._media_element,
-            this._onRequiredUnbufferedSeek.bind(this)
-        );
+        if (this._media_data_source?.type === 'mediaedge') {
+            this._seeking_handler = new MediaedgeSeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
+        } else {
+            this._seeking_handler = new SeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
+        }
 
         this._loading_controller = new LoadingController(
             this._config,

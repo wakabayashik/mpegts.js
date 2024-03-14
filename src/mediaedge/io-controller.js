@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Bilibili. All Rights Reserved.
+ * Copyright (C) 2024 wakabayashik. All Rights Reserved.
  *
- * @author zheng qian <xqq@xqq.im>
+ * @author wakabayashik (https://github.com/wakabayashik)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,11 @@
  * limitations under the License.
  */
 
-import Log from '../utils/logger.js';
-import SpeedSampler from '../io/speed-sampler.js';
-import {LoaderStatus, LoaderErrors} from '../io/loader.js';
 import FetchStreamLoader from '../io/fetch-stream-loader.js';
-import MozChunkedLoader from '../io/xhr-moz-chunked-loader.js';
-import MSStreamLoader from '../io/xhr-msstream-loader.js';
-import RangeLoader from '../io/xhr-range-loader.js';
-import WebSocketLoader from '../io/websocket-loader.js';
-import RangeSeekHandler from '../io/range-seek-handler.js';
-import ParamSeekHandler from '../io/param-seek-handler.js';
 import {RuntimeException, IllegalStateException, InvalidArgumentException} from '../utils/exception.js';
 import IOController from '../io/io-controller.js';
 import MediaedgeFetchStreamLoader from './fetch-stream-loader.js';
+import MediaedgeIoSeekHandler from './io-seek-handler.js';
 
 /**
  * DataSource: {
@@ -46,42 +38,42 @@ class MediaedgeIOController extends IOController {
     constructor(dataSource, config, extraData) {
         super(dataSource, config, extraData);
         this.TAG = 'MediaedgeIOController';
-        console.debug(this.TAG, 'constructor', dataSource, config, extraData);
+        // console.debug(this.TAG, 'constructor', dataSource, config, extraData);
+        this._onHeaderArrival = null;
     }
 
-    _selectSeekHandler() {
-        let config = this._config;
+    get onHeaderArrival() {
+        return this._onHeaderArrival ?? (() => {});
+    }
 
-        if (config.seekType === 'range') {
-            this._seekHandler = new RangeSeekHandler(this._config.rangeLoadZeroStart);
-        } else if (config.seekType === 'param') {
-            let paramStart = config.seekParamStart || 'bstart';
-            let paramEnd = config.seekParamEnd || 'bend';
+    set onHeaderArrival(value) {
+        this._onHeaderArrival = value;
+    }
 
-            this._seekHandler = new ParamSeekHandler(paramStart, paramEnd);
-        } else if (config.seekType === 'custom') {
-            if (typeof config.customSeekHandler !== 'function') {
-                throw new InvalidArgumentException('Custom seekType specified in config but invalid customSeekHandler!');
-            }
-            this._seekHandler = new config.customSeekHandler();
+    /*override*/ _selectSeekHandler() {
+        this._seekHandler = new MediaedgeIoSeekHandler(this._config);
+    }
+
+    /*override*/ _selectLoader() {
+        if (FetchStreamLoader.isSupported()) {
+            this._loaderClass = MediaedgeFetchStreamLoader;
         } else {
-            throw new InvalidArgumentException(`Invalid seekType in config: ${config.seekType}`);
+            throw new RuntimeException('Your browser doesn\'t support xhr with arraybuffer responseType!');
         }
     }
 
-    _selectLoader() {
-        if (this._config.customLoader != null) {
-            this._loaderClass = this._config.customLoader;
-        } else if (this._isWebSocketURL) {
-            this._loaderClass = WebSocketLoader;
-        } else if (FetchStreamLoader.isSupported()) {
-            this._loaderClass = MediaedgeFetchStreamLoader;
-        } else if (MozChunkedLoader.isSupported()) {
-            this._loaderClass = MozChunkedLoader;
-        } else if (RangeLoader.isSupported()) {
-            this._loaderClass = RangeLoader;
-        } else {
-            throw new RuntimeException('Your browser doesn\'t support xhr with arraybuffer responseType!');
+    /*override*/ _createLoader() {
+        this._loader = new this._loaderClass(this._seekHandler, this._config);
+        if (this._loader.needStashBuffer === false) {
+            this._enableStash = false;
+        }
+        this._loader.onContentLengthKnown = this._onContentLengthKnown.bind(this);
+        this._loader.onURLRedirect = this._onURLRedirect.bind(this);
+        this._loader.onDataArrival = this._onLoaderChunkArrival.bind(this);
+        this._loader.onComplete = this._onLoaderComplete.bind(this);
+        this._loader.onError = this._onLoaderError.bind(this);
+        if (this._loader instanceof MediaedgeFetchStreamLoader) {
+            this._loader.onHeaderArrival = (...args) => this.onHeaderArrival(...args);
         }
     }
 

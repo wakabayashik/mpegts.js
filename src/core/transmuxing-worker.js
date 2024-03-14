@@ -48,7 +48,6 @@ let TransmuxingWorker = function (self) {
         switch (e.data.cmd) {
             case 'init':
                 if (e.data.param[0]?.type === 'mediaedge') {
-                    e.data.param[0].type = 'mpegts';
                     controller = new MediaedgeTransmuxingController(e.data.param[0], e.data.param[1]);
                 } else {
                     controller = new TransmuxingController(e.data.param[0], e.data.param[1]);

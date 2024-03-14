@@ -101,10 +101,10 @@ class TSDemuxer extends BaseDemuxer {
     private sync_offset_: number;
     private first_parse_: boolean = true;
 
-    private media_info_ = new MediaInfo();
+    protected media_info_ = new MediaInfo();
 
     private timescale_ = 90;
-    private duration_ = 0;
+    protected duration_ = 0;
 
     private pat_: PAT;
     private current_program_: number;
