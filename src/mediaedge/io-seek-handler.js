@@ -26,26 +26,30 @@ class MediaedgeIoSeekHandler {
         let url = new URL(baseUrl);
         let headers = {};
 
-        if (this.config.mediaedgeWrapQueryOption) {
-            const params = new URLSearchParams;
-            if (range.from !== 0) {
-                params.set('starttime', '' + (range.from / 1000));
-            }
-            params.set('disconnectOnEndOfStream', '1');
+        if (url.searchParams.has('option')) {
+            const params = new URLSearchParams(url.searchParams.get('option'));
+            this._setParams(range, params);
             url.searchParams.set('option', '?' + params);
         } else {
-            if (range.from !== 0) {
-                url.searchParams.set('starttime', '' + (range / 1000));
-            }
-            url.searchParams.set('disconnectOnEndOfStream', '1');
+            this._setParams(range, url.searchParams);
         }
         // console.debug('MediaedgeSeekHandler', 'getConfig', baseUrl, range, url.href, headers);
-        range.from = 0;
+        // range.from = 0;
         return {url:url.href, headers};
     }
 
     removeURLParameters(seekedURL) {
         return seekedURL;
+    }
+
+    _setParams(range, params) {
+        if (range.from !== 0) {
+            params.set('starttime', '' + (Math.max(0, range.from - 1000) / 1000));
+        }
+        if (!params.has('burst')) {
+            params.set('burst', '10000/3000');
+            //params.set('burst', '5000/3000');
+        }
     }
 
 }

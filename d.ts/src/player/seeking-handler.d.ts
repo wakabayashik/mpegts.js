@@ -5,7 +5,7 @@ declare class SeekingHandler {
     private _always_seek_keyframe;
     protected _on_unbuffered_seek: (milliseconds: number) => void;
     protected _request_set_current_time: boolean;
-    private _seek_request_record_clocktime?;
+    protected _seek_request_record_clocktime?: number;
     private _idr_sample_list;
     protected e?: any;
     constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, TAG?: string);
@@ -14,7 +14,7 @@ declare class SeekingHandler {
     directSeek(seconds: number): void;
     appendSyncPoints(syncpoints: any[]): void;
     protected _onMediaSeeking(e: Event): void;
-    private _pollAndApplyUnbufferedSeek;
+    protected _pollAndApplyUnbufferedSeek(): void;
     protected _isPositionBuffered(seconds: number): boolean;
     private _getNearestKeyframe;
     protected static _getClockTime(): number;

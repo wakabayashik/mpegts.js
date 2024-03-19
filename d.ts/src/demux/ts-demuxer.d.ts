@@ -87,5 +87,7 @@ declare class TSDemuxer extends BaseDemuxer {
     private parseAsynchronousKLVMetadataPayload;
     private parseSMPTE2038MetadataPayload;
     private getNearestTimestampMilliseconds;
+    protected getPcrBase(data: Uint8Array): number;
+    protected getTimestamp(data: Uint8Array, pos: number): number;
 }
 export default TSDemuxer;

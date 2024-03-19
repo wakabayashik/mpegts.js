@@ -255,7 +255,7 @@ class PlayerEngineMainThread implements PlayerEngine {
         });
 
         if (this._media_data_source?.type === 'mediaedge') {
-            this._seeking_handler = new MediaedgeSeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
+            this._seeking_handler = new MediaedgeSeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this), this._onRequestPauseTransmuxer.bind(this));
         } else {
             this._seeking_handler = new SeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
         }

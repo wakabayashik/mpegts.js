@@ -295,11 +295,7 @@ class TSDemuxer extends BaseDemuxer {
 
                     let PCR_flag = (data[5] & 0x10) >>> 4;
                     if (PCR_flag) {
-                        let pcr_base = (data[6] << 25) |
-                                       (data[7] << 17) |
-                                       (data[8] <<  9) |
-                                       (data[9] <<  1) |
-                                       (data[10] >>> 7);
+                        let pcr_base = this.getPcrBase(data);
                         let pcr_extension = ((data[10] & 0x01) << 8) | data[11];
                         let pcr = pcr_base * 300 + pcr_extension;
                         this.last_pcr_ = pcr;
@@ -575,21 +571,8 @@ class TSDemuxer extends BaseDemuxer {
             let dts: number | undefined;
 
             if (PTS_DTS_flags === 0x02 || PTS_DTS_flags === 0x03) {
-                pts = (data[9] & 0x0E) * 536870912 + // 1 << 29
-                      (data[10] & 0xFF) * 4194304 + // 1 << 22
-                      (data[11] & 0xFE) * 16384 + // 1 << 14
-                      (data[12] & 0xFF) * 128 + // 1 << 7
-                      (data[13] & 0xFE) / 2;
-
-                if (PTS_DTS_flags === 0x03) {
-                    dts = (data[14] & 0x0E) * 536870912 + // 1 << 29
-                          (data[15] & 0xFF) * 4194304 + // 1 << 22
-                          (data[16] & 0xFE) * 16384 + // 1 << 14
-                          (data[17] & 0xFF) * 128 + // 1 << 7
-                          (data[18] & 0xFE) / 2;
-                } else {
-                    dts = pts;
-                }
+                pts = this.getTimestamp(data, 9);
+                dts = PTS_DTS_flags === 0x03 ? this.getTimestamp(data, 14) : pts;
             }
 
             let payload_start_index = 6 + 3 + PES_header_data_length;
@@ -2014,6 +1997,19 @@ class TSDemuxer extends BaseDemuxer {
         }
         return undefined;
     }
+
+    protected getPcrBase(data: Uint8Array): number {
+        return (data[6] << 25) | (data[7] << 17) | (data[8] << 9) | (data[9] << 1) | ((data[10] & 0x80) >>> 7);
+    }
+
+    protected getTimestamp(data: Uint8Array, pos: number): number {
+        return (data[pos] & 0x0E) * 536870912 + // 1 << 29
+                (data[pos + 1] & 0xFF) * 4194304 + // 1 << 22
+                (data[pos + 2] & 0xFE) * 16384 + // 1 << 14
+                (data[pos + 3] & 0xFF) * 128 + // 1 << 7
+                (data[pos + 4] & 0xFE) / 2;
+    }
+
 }
 
 export default TSDemuxer;

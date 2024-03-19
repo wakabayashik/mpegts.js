@@ -29,7 +29,7 @@ class SeekingHandler {
     protected _on_unbuffered_seek: (milliseconds: number) => void = null;
 
     protected _request_set_current_time: boolean = false;
-    private _seek_request_record_clocktime?: number = null;
+    protected _seek_request_record_clocktime?: number = null;
     private _idr_sample_list: IDRSampleList = new IDRSampleList();
 
     protected e?: any = null;
@@ -154,7 +154,7 @@ class SeekingHandler {
 
     }
 
-    private _pollAndApplyUnbufferedSeek(): void {
+    protected _pollAndApplyUnbufferedSeek(): void {
         if (this._seek_request_record_clocktime == null) {
             return;
         }
