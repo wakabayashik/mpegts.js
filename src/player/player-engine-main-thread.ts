@@ -255,9 +255,19 @@ class PlayerEngineMainThread implements PlayerEngine {
         });
 
         if (this._media_data_source?.type === 'mediaedge') {
-            this._seeking_handler = new MediaedgeSeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this), this._onRequestPauseTransmuxer.bind(this));
+            this._seeking_handler = new MediaedgeSeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this),
+                this._onRequestDirectSeek.bind(this),
+                this._onRequestPauseTransmuxer.bind(this)
+            );
         } else {
-            this._seeking_handler = new SeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
+            this._seeking_handler = new SeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this)
+            );
         }
 
         this._loading_controller = new LoadingController(
@@ -395,13 +405,13 @@ class PlayerEngineMainThread implements PlayerEngine {
     private _onMediaLoadedMetadata(e: any): void {
         this._loaded_metadata_received = true;
         if (this._pending_seek_time != null) {
-            this._seeking_handler.seek(this._pending_seek_time);
+            this._seeking_handler?.seek(this._pending_seek_time);
             this._pending_seek_time = null;
         }
     }
 
     private _onRequestDirectSeek(target: number): void {
-        this._seeking_handler.directSeek(target);
+        this._seeking_handler?.directSeek(target);
     }
 
     private _onRequiredUnbufferedSeek(milliseconds: number): void {

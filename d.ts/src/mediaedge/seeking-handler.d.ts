@@ -1,9 +1,12 @@
 import SeekingHandler from "../player/seeking-handler";
 declare class MediaedgeSeekingHandler extends SeekingHandler {
-    private on_pause_transmuxer;
-    private pausedPosition;
+    private _on_direct_seek;
+    private _on_pause_transmuxer;
+    private _pausedPosition;
+    private _startup_stall_jumper?;
+    private _timer;
     isLive: boolean;
-    constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, on_pause_transmuxer: () => void);
+    constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, on_direct_seek: (target: number) => void, on_pause_transmuxer: () => void);
     destroy(): void;
     protected _onMediaSeeking(e: Event): void;
     protected _isPositionBuffered(seconds: number): boolean;

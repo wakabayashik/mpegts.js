@@ -34,7 +34,6 @@ class MediaedgeIoSeekHandler {
             this._setParams(range, url.searchParams);
         }
         // console.debug('MediaedgeSeekHandler', 'getConfig', baseUrl, range, url.href, headers);
-        // range.from = 0;
         return {url:url.href, headers};
     }
 
@@ -43,13 +42,47 @@ class MediaedgeIoSeekHandler {
     }
 
     _setParams(range, params) {
-        if (range.from !== 0) {
-            params.set('starttime', '' + (Math.max(0, range.from - 1000) / 1000));
+        if (params.has('startdatetime')) {
+            let startdatetime = params.get('startdatetime');
+            if (startdatetime === 'now') {
+                return;
+            }
+            if (range.from !== 0) {
+                const dt = this._getDate(startdatetime);
+                if (!isNaN(dt.getTime())) {
+                    dt.setTime(dt.getTime() + range.from);
+                    if (!isNaN(dt.getTime())) {
+                        params.set('startdatetime', dt.toISOString().replace(/[\-\:]/g, '')); // ISO8601 basic string
+                    }
+                }
+            }
+        } else {
+            if (range.from !== 0) {
+                const adjust = (this.config?.mediaedgeSeekAdjust ?? 1000) || 0;
+                params.set('starttime', '' + (Math.max(0, range.from - adjust) / 1000)); // [sec]
+            }
+            if (!params.has('burst')) {
+                const burst = this.config?.mediaedgeBurst ?? '10000/3000';
+                if (burst) params.set('burst', burst);
+            }
         }
-        if (!params.has('burst')) {
-            params.set('burst', '10000/3000');
-            //params.set('burst', '5000/3000');
+    }
+
+    _getDate(str) {
+        let dt = new Date(str);
+        if (isNaN(dt.getTime()) && typeof str === 'string') {
+            const mr = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2}(?:\.\d+)?)(Z|([\+\-])(\d{2})(\d{2}))?/i); // ISO8601 basic format
+            if (mr) {
+                if (!mr[7]) {
+                    dt = new Date(`${mr[1]}-${mr[2]}-${mr[3]}T${mr[4]}:${mr[5]}:${mr[6]}`);
+                } else if (mr[7].toLowerCase() === 'z') {
+                    dt = new Date(`${mr[1]}-${mr[2]}-${mr[3]}T${mr[4]}:${mr[5]}:${mr[6]}${mr[7]}`);
+                } else {
+                    dt = new Date(`${mr[1]}-${mr[2]}-${mr[3]}T${mr[4]}:${mr[5]}:${mr[6]}${mr[8]}${mr[9]}:${mr[10]}`);
+                }
+            }
         }
+        return dt;
     }
 
 }

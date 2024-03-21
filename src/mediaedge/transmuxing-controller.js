@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+import Log from '../utils/logger.js';
 import TSDemuxer from '../demux/ts-demuxer';
 import MP4Remuxer from '../remux/mp4-remuxer.js';
 import TransmuxingController from '../core/transmuxing-controller.js';
@@ -50,8 +51,6 @@ class MediaedgeTransmuxingController extends TransmuxingController {
     }
 
     /*override*/ seek(milliseconds) {
-        // console.debug(this.TAG, 'seek', milliseconds);
-
         const targetSegmentIndex = this._searchSegmentIndexContains(milliseconds);
         // const targetSegmentInfo = this._mediaInfo?.segments[targetSegmentIndex];
         this._internalAbort();
@@ -59,10 +58,7 @@ class MediaedgeTransmuxingController extends TransmuxingController {
             this._remuxer.seek(milliseconds);
             this._remuxer.insertDiscontinuity();
         }
-        if (false) {
-            this._demuxer.resetMediaInfo();
-            this._demuxer.timestampBase = this._mediaDataSource.segments[targetSegmentIndex].timestampBase;
-        } else if (this._demuxer) { // re-create demuxer to purge data held in the demuxer (pes_slice_queues_, video_track_.samples, audio_track_.samples)
+        if (this._demuxer) { // re-create demuxer to purge data held in the demuxer (pes_slice_queues_, video_track_.samples, audio_track_.samples)
             this._demuxer.destroy();
             this._demuxer = null;
         }
@@ -73,13 +69,15 @@ class MediaedgeTransmuxingController extends TransmuxingController {
     }
 
     /*override*/ _setupTSDemuxerRemuxer(probeData) {
-        let demuxer = this._demuxer = new MediaedgeTSDemuxer(probeData, this._config, this.duration);
-        demuxer.position = this.position;
+        if (this.duration) {
+            this._demuxer = new MediaedgeTSDemuxer(probeData, this._config, this.duration, this.position);
+        } else {
+            this._demuxer = new TSDemuxer(probeData, this._config); // live
+        }
+        const demuxer = this._demuxer;
 
         if (!this._remuxer) {
             this._remuxer = new MP4Remuxer(this._config);
-            this._remuxer._dtsBase = 0;
-            this._remuxer._dtsBaseInited = true;
         }
 
         demuxer.onError = this._onDemuxException.bind(this);
@@ -93,19 +91,30 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         demuxer.onPESPrivateDataDescriptor = this._onPESPrivateDataDescriptor.bind(this);
         demuxer.onPESPrivateData = this._onPESPrivateData.bind(this);
 
-        this._remuxer.bindDataSource(this._demuxer);
+        if (this.duration) {
+            demuxer.onDataAvailable = (audioTrack, videoTrack) => {
+                this._remuxer._dtsBaseInited = false;
+                this._remuxer._calculateDtsBase(audioTrack, videoTrack);
+                this._remuxer._dtsBase -= this.position;
+                this._remuxer.remux(audioTrack, videoTrack);
+                this._remuxer.bindDataSource(this._demuxer);
+            };
+            demuxer.onTrackMetadata = (type, metadata) => this._remuxer._onTrackMetadataReceived(type, metadata);
+        } else {
+            this._remuxer.bindDataSource(this._demuxer); // live
+        }
+        this._demuxer.bindDataSource(this._ioctl);
+
         this._remuxer.onInitSegment = this._onRemuxerInitSegmentArrival.bind(this);
         this._remuxer.onMediaSegment = this._onRemuxerMediaSegmentArrival.bind(this);
     }
 
     _onDataArrival(chunks, byte_start) {
-        // console.log('_onDataArrival', chunks.byteLength);
         if (!this._demuxer) {
             const probeData = TSDemuxer.probe(chunks);
             if (probeData.match) {
                 // Hit as MPEG-TS
                 this._setupTSDemuxerRemuxer(probeData);
-                //consumed = this._demuxer.parseChunks(data, byteStart);
             } else if (!probeData.needMoreData) {
                 // Both probing as FLV / MPEG-TS failed, report error
                 Log.e(this.TAG, 'Non MPEG-TS/FLV, Unsupported media type!');
@@ -115,12 +124,9 @@ class MediaedgeTransmuxingController extends TransmuxingController {
                 this._emitter.emit(TransmuxingEvents.DEMUX_ERROR, DemuxErrors.FORMAT_UNSUPPORTED, 'Non MPEG-TS/FLV, Unsupported media type!');
                 return 0;
             } else {
-                console.log('needMoreData');
                 return 0; // needMoreData
             }
         }
-        this._demuxer.position = this.position; // set playback position in millisecond which was taken from 'mediaedge' type server
-        this._demuxer.bindDataSource(this._ioctl); // subsequent data will be sent to demuxer directly.
         return this._demuxer.parseChunks(chunks, byte_start);
     }
 
