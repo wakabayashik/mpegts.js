@@ -77,6 +77,20 @@ class MediaedgeIOController extends IOController {
         }
     }
 
+    /*override*/ open(optionalFrom, playspeed) {
+        this._currentRange = {from: 0, to: -1};
+        if (optionalFrom) {
+            this._currentRange.from = optionalFrom;
+        }
+
+        this._speedSampler.reset();
+        if (!optionalFrom) {
+            this._fullRequestFlag = true;
+        }
+
+        this._loader.open(this._dataSource, Object.assign({playspeed}, this._currentRange));
+    }
+
 }
 
 export default MediaedgeIOController;

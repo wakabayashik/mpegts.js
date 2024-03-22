@@ -201,9 +201,19 @@ class PlayerEngineDedicatedThread implements PlayerEngine {
         });
 
         if (this._media_data_source?.type === 'mediaedge') {
-            this._seeking_handler = new MediaedgeSeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this), this._onRequestPauseTransmuxer.bind(this));
+            this._seeking_handler = new MediaedgeSeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this),
+                this._onRequestDirectSeek.bind(this),
+                this._onRequestPauseTransmuxer.bind(this)
+            );
         } else {
-            this._seeking_handler = new SeekingHandler(this._config, this._media_element, this._onRequiredUnbufferedSeek.bind(this));
+            this._seeking_handler = new SeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this)
+            );
         }
 
         this._loading_controller = new LoadingController(
@@ -319,10 +329,17 @@ class PlayerEngineDedicatedThread implements PlayerEngine {
     }
 
     private _onRequiredUnbufferedSeek(milliseconds: number): void {
-        this._worker.postMessage({
-            cmd: 'unbuffered_seek',
-            milliseconds: milliseconds
-        } as WorkerCommandPacketUnbufferedSeek);
+        if (this._media_data_source?.type === 'mediaedge') {
+            this._worker.postMessage({
+                cmd: 'unbuffered_seek',
+                milliseconds: {milliseconds, playspeed:this._media_element.playbackRate}
+            } as WorkerCommandPacketUnbufferedSeek);
+        } else {
+            this._worker.postMessage({
+                cmd: 'unbuffered_seek',
+                milliseconds: milliseconds
+            } as WorkerCommandPacketUnbufferedSeek);
+        }
     }
 
     private _onRequestPauseTransmuxer(): void {
@@ -384,7 +401,7 @@ class PlayerEngineDedicatedThread implements PlayerEngine {
                     const packet = message_packet as WorkerMessagePacketTransmuxingEventInfo;
                     this._media_info = packet.info;
                     if (this._seeking_handler instanceof MediaedgeSeekingHandler) {
-                        (this._seeking_handler as MediaedgeSeekingHandler).isLive = !this._media_info?.duration;
+                        (this._seeking_handler as MediaedgeSeekingHandler).seekable = !!this._media_info?.duration;
                     }
                     this._emitter.emit(PlayerEvents.MEDIA_INFO, Object.assign({}, packet.info));
                 } else if (packet.event == TransmuxingEvents.STATISTICS_INFO) {

@@ -13,7 +13,10 @@ export type WorkerCommandPacketLoggingConfig = WorkerCommandPacket & {
 };
 export type WorkerCommandPacketUnbufferedSeek = WorkerCommandPacket & {
     cmd: 'unbuffered_seek';
-    milliseconds: number;
+    milliseconds: number | {
+        milliseconds: number;
+        playspeed: number;
+    };
 };
 export type WorkerCommandPacketTimeUpdate = WorkerCommandPacket & {
     cmd: 'timeupdate';

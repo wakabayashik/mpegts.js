@@ -35,7 +35,7 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         this.timeProgressing = false;
     }
 
-    /*override*/ _loadSegment(segmentIndex, optionalFrom) {
+    /*override*/ _loadSegment(segmentIndex, optionalFrom, playspeed) {
         this._currentSegmentIndex = segmentIndex;
         const dataSource = this._mediaDataSource.segments[segmentIndex];
 
@@ -47,10 +47,10 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         ioctl.onRecoveredEarlyEof = this._onIORecoveredEarlyEof.bind(this);
         ioctl.onHeaderArrival = this._onHeaderArrival.bind(this);
         ioctl.onDataArrival = this._onDataArrival.bind(this);
-        ioctl.open(optionalFrom);
+        ioctl.open(optionalFrom, playspeed);
     }
 
-    /*override*/ seek(milliseconds) {
+    /*override*/ seek({milliseconds = 0, playspeed = 1.0} = {}) {
         const targetSegmentIndex = this._searchSegmentIndexContains(milliseconds);
         // const targetSegmentInfo = this._mediaInfo?.segments[targetSegmentIndex];
         this._internalAbort();
@@ -62,7 +62,7 @@ class MediaedgeTransmuxingController extends TransmuxingController {
             this._demuxer.destroy();
             this._demuxer = null;
         }
-        this._loadSegment(targetSegmentIndex, milliseconds);
+        this._loadSegment(targetSegmentIndex, milliseconds, playspeed);
         this._pendingResolveSeekPoint = milliseconds;
         if (this._mediaInfo) this._reportSegmentMediaInfo(targetSegmentIndex);
         this._enableStatisticsReporter();

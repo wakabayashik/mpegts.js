@@ -23,10 +23,10 @@ class MediaedgeSeekingHandler extends SeekingHandler {
 
     private _on_direct_seek: (target: number) => void;
     private _on_pause_transmuxer: () => void;
-    private _pausedPosition: number;
     private _startup_stall_jumper?: StartupStallJumper = null;
-    private _timer: any;
-    public isLive: boolean;
+    private _pausedPosition: number = NaN;
+    private _timer: any = null;
+    private _seekable: boolean = false;
 
     public constructor(config: any, media_element: HTMLMediaElement,
         on_unbuffered_seek: (milliseconds: number) => void,
@@ -39,23 +39,25 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         this._on_pause_transmuxer = on_pause_transmuxer;
         this.e.onPlay = this._onPlay.bind(this);
         this.e.onPause = this._onPause.bind(this);
-        this._media_element.addEventListener('play', this.e.onPlay);
-        this._media_element.addEventListener('pause', this.e.onPause);
-        this._pausedPosition = NaN;
-        this._startup_stall_jumper = null;
-        this._timer = null;
-        this.isLive = false;
+        this.e.onRateChange = this._onRateChange.bind(this);
+    }
+
+    public set seekable(value: boolean) {
+        if (this._seekable !== value) {
+            this._seekable = value;
+            this._off();
+            if (this._seekable) this._on();
+        }
     }
 
     public override destroy(): void {
         clearTimeout(this._timer);
-        this._media_element.removeEventListener('pause', this.e.onPause);
-        this._media_element.removeEventListener('play', this.e.onPlay);
+        this._off();
         super.destroy();
     }
 
     protected override _onMediaSeeking(e: Event): void {
-        if (this.isLive) {
+        if (!this._seekable) {
             return super._onMediaSeeking(e);
         }
         if (this._request_set_current_time) {
@@ -69,26 +71,43 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         if (this._media_element.paused) {
             this._pausedPosition = this._media_element.currentTime;
             clearTimeout(this._timer);
-            this._timer = setTimeout(() => this._media_element.paused ? this._on_pause_transmuxer() : undefined, 300);
+            this._timer = setTimeout(() => this._media_element.paused ? this._on_pause_transmuxer() : undefined, 500);
         }
     }
 
     protected override _isPositionBuffered(seconds: number): boolean {
-        if (this.isLive) {
+        if (!this.seekable) {
             return super._isPositionBuffered(seconds);
         }
         return false;
     }
 
+    private _on() {
+        this._media_element.addEventListener('play', this.e.onPlay);
+        this._media_element.addEventListener('pause', this.e.onPause);
+        this._media_element.addEventListener('ratechange', this.e.onRateChange);
+    }
+
+    private _off() {
+        this._media_element.removeEventListener('ratechange', this.e.onRateChange);
+        this._media_element.removeEventListener('pause', this.e.onPause);
+        this._media_element.removeEventListener('play', this.e.onPlay);
+    }
+
     private _onPlay(e: Event) {
         if (this._startup_stall_jumper) this._startup_stall_jumper.destroy();
         this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
-        return this._on_unbuffered_seek(this.isLive ? 0 : this._pausedPosition * 1000); // sec to millisec
+        return this._on_unbuffered_seek(this._pausedPosition * 1000); // sec to millisec
     }
 
     private _onPause(e: Event) {
         this._pausedPosition = this._media_element.currentTime;
         return this._on_pause_transmuxer();
+    }
+
+    private _onRateChange(e: Event) {
+        if (this._media_element.paused) return;
+        return this._on_unbuffered_seek(this._media_element.currentTime * 1000); // sec to millisec
     }
 
 }

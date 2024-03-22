@@ -66,6 +66,12 @@ class MediaedgeIoSeekHandler {
                 if (burst) params.set('burst', burst);
             }
         }
+        const playspeed = +range.playspeed;
+        if (!playspeed || playspeed === 1.0) {
+            params.delete('playspeed'); // normal playspeed
+        } else {
+            params.set('playspeed', '' + playspeed);
+        }
     }
 
     _getDate(str) {

@@ -213,7 +213,7 @@ class PlayerEngineMainThread implements PlayerEngine {
         this._transmuxer.on(TransmuxingEvents.MEDIA_INFO, (mediaInfo: MediaInfo) => {
             this._media_info = mediaInfo;
             if (this._seeking_handler instanceof MediaedgeSeekingHandler) {
-                (this._seeking_handler as MediaedgeSeekingHandler).isLive = !this._media_info?.duration;
+                (this._seeking_handler as MediaedgeSeekingHandler).seekable = !!this._media_info?.duration;
             }
             this._emitter.emit(PlayerEvents.MEDIA_INFO, Object.assign({}, mediaInfo));
         });
@@ -416,7 +416,11 @@ class PlayerEngineMainThread implements PlayerEngine {
 
     private _onRequiredUnbufferedSeek(milliseconds: number): void {
         this._mse_controller.flush();
-        this._transmuxer.seek(milliseconds);
+        if (this._media_data_source?.type === 'mediaedge') {
+            this._transmuxer.seek({milliseconds, playspeed:this._media_element?.playbackRate});
+        } else {
+            this._transmuxer.seek(milliseconds);
+        }
     }
 
     private _onRequestPauseTransmuxer(): void {
