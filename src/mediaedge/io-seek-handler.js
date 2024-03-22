@@ -23,7 +23,7 @@ class MediaedgeIoSeekHandler {
     }
 
     getConfig(baseUrl, range) {
-        let url = new URL(baseUrl);
+        let url = new URL(baseUrl, self.location.href);
         let headers = {};
 
         if (url.searchParams.has('option')) {
