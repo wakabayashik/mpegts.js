@@ -21,32 +21,13 @@ import TSDemuxer from '../demux/ts-demuxer';
 
 class MediaedgeTSDemuxer extends TSDemuxer {
 
-    private _position: number;
-    private _timestampOffset: number;
-
-    public constructor(probe_data: any, config: any, duration: number, position: number) {
+    public constructor(probe_data: any, config: any, duration: number) {
         super(probe_data, config, 'MediaedgeTSDemuxer');
         // console.debug(this.TAG, 'constructor', probe_data, config, duration);
         if (!isNaN(duration) && isFinite(duration)) {
             this.duration_ = duration;
             this.media_info_.duration = duration;
         }
-        this._position = position;
-        this._timestampOffset = NaN;
-    }
-
-    protected override getPcrBase(data: Uint8Array): number {
-        const pcr = super.getPcrBase(data);
-        if (!this.duration_) return pcr; // live
-        if (isNaN(this._timestampOffset)) this._timestampOffset = this._position * 90 - pcr;
-        return pcr + this._timestampOffset;
-    }
-
-    protected override getTimestamp(data: Uint8Array, pos: number): number {
-        const timestamp = super.getTimestamp(data, pos);
-        if (!this.duration_) return timestamp; // live
-        if (isNaN(this._timestampOffset)) Log.w(this.TAG, `Missing timestampOffset ${this._timestampOffset}`);
-        return timestamp + this._timestampOffset;
     }
 
 }

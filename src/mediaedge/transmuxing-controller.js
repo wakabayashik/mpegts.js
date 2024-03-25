@@ -69,12 +69,7 @@ class MediaedgeTransmuxingController extends TransmuxingController {
     }
 
     /*override*/ _setupTSDemuxerRemuxer(probeData) {
-        if (this.duration) {
-            this._demuxer = new MediaedgeTSDemuxer(probeData, this._config, this.duration, this.position);
-        } else {
-            this._demuxer = new TSDemuxer(probeData, this._config); // live
-        }
-        const demuxer = this._demuxer;
+        const demuxer = this._demuxer = new MediaedgeTSDemuxer(probeData, this._config, +this.duration);
 
         if (!this._remuxer) {
             this._remuxer = new MP4Remuxer(this._config);
@@ -91,7 +86,7 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         demuxer.onPESPrivateDataDescriptor = this._onPESPrivateDataDescriptor.bind(this);
         demuxer.onPESPrivateData = this._onPESPrivateData.bind(this);
 
-        if (this.duration) {
+        if (this.position !== null) {
             demuxer.onDataAvailable = (audioTrack, videoTrack) => {
                 this._remuxer._dtsBaseInited = false;
                 this._remuxer._calculateDtsBase(audioTrack, videoTrack);

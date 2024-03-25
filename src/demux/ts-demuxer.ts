@@ -136,6 +136,8 @@ class TSDemuxer extends BaseDemuxer {
     };
 
     private last_pcr_: number | undefined;
+    private last_pcr_base_: number = NaN;
+    private timestamp_offset_: number = 0;
 
     private audio_last_sample_pts_: number = undefined;
     private aac_last_incomplete_data_: Uint8Array = null;
@@ -1998,16 +2000,32 @@ class TSDemuxer extends BaseDemuxer {
         return undefined;
     }
 
-    protected getPcrBase(data: Uint8Array): number {
-        return (data[6] << 25) | (data[7] << 17) | (data[8] << 9) | (data[9] << 1) | ((data[10] & 0x80) >>> 7);
+    private getPcrBase(data: Uint8Array): number {
+        let pcr_base = data[6] * 33554432 // 1 << 25
+            + data[7] * 131072 // 1 << 17
+            + data[8] * 512 // 1 << 9
+            + data[9] * 2 // 1 << 1
+            + (data[10] & 0x80) / 128 // 1 >> 7
+            + this.timestamp_offset_;
+        if (pcr_base + 0x100000000 < this.last_pcr_base_) {
+            pcr_base += 0x200000000; // pcr_base wraparound
+            this.timestamp_offset_ += 0x200000000;
+        }
+        this.last_pcr_base_ = pcr_base;
+        return pcr_base;
     }
 
-    protected getTimestamp(data: Uint8Array, pos: number): number {
-        return (data[pos] & 0x0E) * 536870912 + // 1 << 29
-                (data[pos + 1] & 0xFF) * 4194304 + // 1 << 22
-                (data[pos + 2] & 0xFE) * 16384 + // 1 << 14
-                (data[pos + 3] & 0xFF) * 128 + // 1 << 7
-                (data[pos + 4] & 0xFE) / 2;
+    private getTimestamp(data: Uint8Array, pos: number): number {
+        let timestamp = (data[pos] & 0x0E) * 536870912 // 1 << 29
+            + (data[pos + 1] & 0xFF) * 4194304 // 1 << 22
+            + (data[pos + 2] & 0xFE) * 16384 // 1 << 14
+            + (data[pos + 3] & 0xFF) * 128 // 1 << 7
+            + (data[pos + 4] & 0xFE) / 2
+            + this.timestamp_offset_;
+        if (timestamp + 0x100000000 < this.last_pcr_base_) {
+            timestamp += 0x200000000; // pts/dts wraparound
+        }
+        return timestamp;
     }
 
 }
