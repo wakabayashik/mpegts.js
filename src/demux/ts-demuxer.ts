@@ -137,6 +137,7 @@ class TSDemuxer extends BaseDemuxer {
 
     private last_pcr_: number | undefined;
     private last_pcr_base_: number = NaN;
+    private last_pcr_base0_: number = NaN;
     private timestamp_offset_: number = 0;
 
     private audio_last_sample_pts_: number = undefined;
@@ -2005,8 +2006,17 @@ class TSDemuxer extends BaseDemuxer {
             + data[7] * 131072 // 1 << 17
             + data[8] * 512 // 1 << 9
             + data[9] * 2 // 1 << 1
-            + (data[10] & 0x80) / 128 // 1 >> 7
-            + this.timestamp_offset_;
+            + (data[10] & 0x80) / 128; // 1 >> 7
+        if (!!this.config_.experimental_FixMpegtsTimestampDiscontinuity) {
+            if (!isNaN(this.last_pcr_base0_) && (pcr_base < this.last_pcr_base0_ ? 0x200000000 : 0) + pcr_base > this.last_pcr_base0_ + 1000 * 90) { // 1000 [ms]
+                Log.w(this.TAG, `Detected timestamp discontinuity: ${this.last_pcr_base0_} > ${pcr_base}`);
+                this.timestamp_offset_ = this.last_pcr_base_ + 100 * 90 - pcr_base;
+                this.dispatchAudioVideoMediaSegment();
+                // causes lip-sync broken...
+            }
+            this.last_pcr_base0_ = pcr_base;
+        }
+        pcr_base += this.timestamp_offset_;
         if (pcr_base + 0x100000000 < this.last_pcr_base_) {
             pcr_base += 0x200000000; // pcr_base wraparound
             this.timestamp_offset_ += 0x200000000;

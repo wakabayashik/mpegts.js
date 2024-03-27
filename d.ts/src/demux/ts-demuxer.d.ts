@@ -20,6 +20,7 @@ declare class TSDemuxer extends BaseDemuxer {
     private audio_metadata_;
     private last_pcr_;
     private last_pcr_base_;
+    private last_pcr_base0_;
     private timestamp_offset_;
     private audio_last_sample_pts_;
     private aac_last_incomplete_data_;
