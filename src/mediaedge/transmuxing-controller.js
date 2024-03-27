@@ -159,7 +159,12 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         }
         if (this._pendingResolveSeekPoint !== null && this.position !== null) {
             // update seek point with server response
-            this._pendingResolveSeekPoint = Math.max(this.position, this._pendingResolveSeekPoint);
+            const adjust = (this._config?.mediaedgeSeekAdjust ?? 1000) || 0;
+            if (this.position + adjust + 500 < this._pendingResolveSeekPoint) {
+                this._pendingResolveSeekPoint = this.position; // failed to seek to the specified position
+            } else {
+                this._pendingResolveSeekPoint = Math.max(this.position, this._pendingResolveSeekPoint);
+            }
         }
     }
 
