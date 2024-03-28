@@ -1,22 +1,22 @@
 declare class SeekingHandler {
-    private readonly TAG;
+    protected readonly TAG: string;
     private _config;
-    private _media_element;
+    protected _media_element: HTMLMediaElement;
     private _always_seek_keyframe;
-    private _on_unbuffered_seek;
-    private _request_set_current_time;
-    private _seek_request_record_clocktime?;
+    protected _on_unbuffered_seek: (milliseconds: number) => void;
+    protected _request_set_current_time: boolean;
+    protected _seek_request_record_clocktime?: number;
     private _idr_sample_list;
-    private e?;
-    constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void);
+    protected e?: any;
+    constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, TAG?: string);
     destroy(): void;
     seek(seconds: number): void;
     directSeek(seconds: number): void;
     appendSyncPoints(syncpoints: any[]): void;
-    private _onMediaSeeking;
-    private _pollAndApplyUnbufferedSeek;
-    private _isPositionBuffered;
+    protected _onMediaSeeking(e: Event): void;
+    protected _pollAndApplyUnbufferedSeek(): void;
+    protected _isPositionBuffered(seconds: number): boolean;
     private _getNearestKeyframe;
-    private static _getClockTime;
+    protected static _getClockTime(): number;
 }
 export default SeekingHandler;

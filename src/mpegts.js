@@ -1,4 +1,4 @@
-/*
+/*!
  * Copyright (C) 2016 Bilibili. All Rights Reserved.
  *
  * @author zheng qian <xqq@xqq.im>
@@ -48,6 +48,7 @@ function createPlayer(mediaDataSource, optionalConfig) {
         case 'mpegts':
         case 'm2ts':
         case 'flv':
+        case 'mediaedge':
             return new MSEPlayer(mds, optionalConfig);
         default:
             return new NativePlayer(mds, optionalConfig);

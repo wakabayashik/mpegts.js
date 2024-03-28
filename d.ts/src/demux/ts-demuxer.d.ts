@@ -1,13 +1,14 @@
+import MediaInfo from '../core/media-info';
 import BaseDemuxer from './base-demuxer';
 declare class TSDemuxer extends BaseDemuxer {
-    private readonly TAG;
+    protected readonly TAG: string;
     private config_;
     private ts_packet_size_;
     private sync_offset_;
     private first_parse_;
-    private media_info_;
+    protected media_info_: MediaInfo;
     private timescale_;
-    private duration_;
+    protected duration_: number;
     private pat_;
     private current_program_;
     private current_pmt_pid_;
@@ -19,6 +20,7 @@ declare class TSDemuxer extends BaseDemuxer {
     private audio_metadata_;
     private last_pcr_;
     private last_pcr_base_;
+    private last_pcr_base0_;
     private timestamp_offset_;
     private audio_last_sample_pts_;
     private aac_last_incomplete_data_;
@@ -31,7 +33,7 @@ declare class TSDemuxer extends BaseDemuxer {
     private loas_previous_frame;
     private video_track_;
     private audio_track_;
-    constructor(probe_data: any, config: any);
+    constructor(probe_data: any, config: any, TAG: string);
     destroy(): void;
     static probe(buffer: ArrayBuffer): {
         needMoreData: boolean;

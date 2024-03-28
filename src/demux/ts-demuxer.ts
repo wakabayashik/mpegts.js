@@ -94,17 +94,17 @@ type AudioData = {
 
 class TSDemuxer extends BaseDemuxer {
 
-    private readonly TAG: string = 'TSDemuxer';
+    protected readonly TAG: string = 'TSDemuxer';
 
     private config_: any;
     private ts_packet_size_: number;
     private sync_offset_: number;
     private first_parse_: boolean = true;
 
-    private media_info_ = new MediaInfo();
+    protected media_info_ = new MediaInfo();
 
     private timescale_ = 90;
-    private duration_ = 0;
+    protected duration_ = 0;
 
     private pat_: PAT;
     private current_program_: number;
@@ -137,6 +137,7 @@ class TSDemuxer extends BaseDemuxer {
 
     private last_pcr_: number | undefined;
     private last_pcr_base_: number = NaN;
+    private last_pcr_base0_: number = NaN;
     private timestamp_offset_: number = 0;
 
     private audio_last_sample_pts_: number = undefined;
@@ -153,8 +154,9 @@ class TSDemuxer extends BaseDemuxer {
     private video_track_ = {type: 'video', id: 1, sequenceNumber: 0, samples: [], length: 0};
     private audio_track_ = {type: 'audio', id: 2, sequenceNumber: 0, samples: [], length: 0};
 
-    public constructor(probe_data: any, config: any) {
+    public constructor(probe_data: any, config: any, TAG: string) {
         super();
+        this.TAG = TAG || this.TAG;
 
         this.ts_packet_size_ = probe_data.ts_packet_size;
         this.sync_offset_ = probe_data.sync_offset;
@@ -594,7 +596,9 @@ class TSDemuxer extends BaseDemuxer {
             switch (pes_data.stream_type) {
                 case StreamType.kMPEG1Audio:
                 case StreamType.kMPEG2Audio:
-                    this.parseMP3Payload(payload, pts);
+                    if (this.pmt_.common_pids.mp3 === pes_data.pid) {
+                        this.parseMP3Payload(payload, pts);
+                    }
                     break;
                 case StreamType.kPESPrivateData:
                     if (this.pmt_.common_pids.opus === pes_data.pid) {
@@ -612,16 +616,24 @@ class TSDemuxer extends BaseDemuxer {
                     }
                     break;
                 case StreamType.kADTSAAC:
-                    this.parseADTSAACPayload(payload, pts);
+                    if (this.pmt_.common_pids.adts_aac === pes_data.pid) {
+                        this.parseADTSAACPayload(payload, pts);
+                    }
                     break;
                 case StreamType.kLOASAAC:
-                    this.parseLOASAACPayload(payload, pts);
+                    if (this.pmt_.common_pids.loas_aac === pes_data.pid) {
+                        this.parseLOASAACPayload(payload, pts);
+                    }
                     break;
                 case StreamType.kAC3:
-                    this.parseAC3Payload(payload, pts);
+                    if (this.pmt_.common_pids.ac3 === pes_data.pid) {
+                        this.parseAC3Payload(payload, pts);
+                    }
                     break;
                 case StreamType.kEAC3:
-                    this.parseEAC3Payload(payload, pts);
+                    if (this.pmt_.common_pids.eac3 === pes_data.pid) {
+                        this.parseEAC3Payload(payload, pts);
+                    }
                     break;
                 case StreamType.kMetadata:
                     if (this.pmt_.timed_id3_pids[pes_data.pid]) {
@@ -631,10 +643,14 @@ class TSDemuxer extends BaseDemuxer {
                     }
                     break;
                 case StreamType.kH264:
-                    this.parseH264Payload(payload, pts, dts, pes_data.file_position, pes_data.random_access_indicator);
+                    if (this.pmt_.common_pids.h264 === pes_data.pid) {
+                        this.parseH264Payload(payload, pts, dts, pes_data.file_position, pes_data.random_access_indicator);
+                    }
                     break;
                 case StreamType.kH265:
-                    this.parseH265Payload(payload, pts, dts, pes_data.file_position, pes_data.random_access_indicator);
+                    if (this.pmt_.common_pids.h265 === pes_data.pid) {
+                        this.parseH265Payload(payload, pts, dts, pes_data.file_position, pes_data.random_access_indicator);
+                    }
                     break;
                 default:
                     break;
@@ -697,6 +713,7 @@ class TSDemuxer extends BaseDemuxer {
         for (let i = program_start_index; i < program_start_index + program_bytes; i += 4) {
             let program_number = (data[i] << 8) | data[i + 1];
             let pid = ((data[i + 2] & 0x1F) << 8) | data[i + 3];
+            if (pid >= 0x1fff) continue;
 
             if (program_number === 0) {
                 // network_PID
@@ -736,6 +753,10 @@ class TSDemuxer extends BaseDemuxer {
         let section_length = ((data[1] & 0x0F) << 8) | data[2];
 
         let program_number = (data[3] << 8) | data[4];
+        if (program_number !== this.current_program_) {
+            return; // ignore programs except the current target program
+        }
+
         let version_number = (data[5] & 0x3E) >>> 1;
         let current_next_indicator = data[5] & 0x01;
         let section_number = data[6];
@@ -761,6 +782,9 @@ class TSDemuxer extends BaseDemuxer {
         let info_start_index = 12 + program_info_length;
         let info_bytes = section_length - 9 - program_info_length - 4;
 
+        let audio_pid = NaN;
+        let video_pid = NaN;
+
         for (let i = info_start_index; i < info_start_index + info_bytes; ) {
             let stream_type = data[i] as StreamType;
             let elementary_PID = ((data[i + 1] & 0x1F) << 8) | data[i + 2];
@@ -768,23 +792,20 @@ class TSDemuxer extends BaseDemuxer {
 
             pmt.pid_stream_type[elementary_PID] = stream_type;
 
-            let already_has_video =  pmt.common_pids.h264 || pmt.common_pids.h265;
-            let already_has_audio = pmt.common_pids.adts_aac || pmt.common_pids.loas_aac || pmt.common_pids.ac3 || pmt.common_pids.eac3 || pmt.common_pids.opus || pmt.common_pids.mp3;
-
-            if (stream_type === StreamType.kH264 && !already_has_video) {
-                pmt.common_pids.h264 = elementary_PID;
-            } else if (stream_type === StreamType.kH265 && !already_has_video) {
-                pmt.common_pids.h265 = elementary_PID;
-            } else if (stream_type === StreamType.kADTSAAC && !already_has_audio) {
-                pmt.common_pids.adts_aac = elementary_PID;
-            } else if (stream_type === StreamType.kLOASAAC && !already_has_audio) {
-                pmt.common_pids.loas_aac = elementary_PID;
-            } else if (stream_type === StreamType.kAC3 && !already_has_audio) {
-                pmt.common_pids.ac3 = elementary_PID; // ATSC AC-3
-            } else if (stream_type === StreamType.kEAC3 && !already_has_audio) {
-                pmt.common_pids.eac3 = elementary_PID; // ATSC EAC-3
-            } else if ((stream_type === StreamType.kMPEG1Audio || stream_type === StreamType.kMPEG2Audio) && !already_has_audio) {
-                pmt.common_pids.mp3 = elementary_PID;
+            if (stream_type === StreamType.kH264 && isNaN(video_pid)) {
+                video_pid = pmt.common_pids.h264 = elementary_PID;
+            } else if (stream_type === StreamType.kH265 && isNaN(video_pid)) {
+                video_pid = pmt.common_pids.h265 = elementary_PID;
+            } else if (stream_type === StreamType.kADTSAAC && isNaN(audio_pid)) {
+                audio_pid = pmt.common_pids.adts_aac = elementary_PID;
+            } else if (stream_type === StreamType.kLOASAAC && isNaN(audio_pid)) {
+                audio_pid = pmt.common_pids.loas_aac = elementary_PID;
+            } else if (stream_type === StreamType.kAC3 && isNaN(audio_pid)) {
+                audio_pid = pmt.common_pids.ac3 = elementary_PID; // ATSC AC-3
+            } else if (stream_type === StreamType.kEAC3 && isNaN(audio_pid)) {
+                audio_pid = pmt.common_pids.eac3 = elementary_PID; // ATSC EAC-3
+            } else if ((stream_type === StreamType.kMPEG1Audio || stream_type === StreamType.kMPEG2Audio) && isNaN(audio_pid)) {
+                audio_pid = pmt.common_pids.mp3 = elementary_PID;
             } else if (stream_type === StreamType.kPESPrivateData) {
                 pmt.pes_private_data_pids[elementary_PID] = true;
                 if (ES_info_length > 0) {
@@ -801,11 +822,19 @@ class TSDemuxer extends BaseDemuxer {
                                 pmt.common_pids.ac3 = elementary_PID; // DVB AC-3 (FIXME: NEED VERIFY)
                             } */ /* else if (registration === 'EC-3' && !alrady_has_audio) {
                                 pmt.common_pids.eac3 = elementary_PID; // DVB EAC-3 (FIXME: NEED VERIFY)
-                            } */ else if (registration === 'Opus') {
-                                pmt.common_pids.opus = elementary_PID;
+                            } */ else if (registration === 'Opus' && isNaN(audio_pid)) {
+                                audio_pid = pmt.common_pids.opus = elementary_PID;
                             } else if (registration === 'KLVA') {
                                 pmt.asynchronous_klv_pids[elementary_PID] = true;
                             }
+                        // } else if (tag === 0x6A) {  // DVB AC-3 descriptor
+                        //     if (isNaN(audio_pid)) {
+                        //         audio_pid = pmt.common_pids.ac3 = elementary_PID; // DVB AC-3
+                        //     }
+                        // } else if (tag === 0x7A) {  // DVB Enhanced AC-3 descriptor
+                        //     if (isNaN(audio_pid)) {
+                        //         audio_pid = pmt.common_pids.eac3 = elementary_PID; // DVB EAC-3
+                        //     }
                         } else if (tag === 0x7F) {  // DVB extension descriptor
                             if (elementary_PID === pmt.common_pids.opus) {
                                 let ext_desc_tag = data[offset + 2];
@@ -885,18 +914,43 @@ class TSDemuxer extends BaseDemuxer {
             i += 5 + ES_info_length;
         }
 
-        if (program_number === this.current_program_) {
-            if (this.pmt_ == undefined) {
-                Log.v(this.TAG, `Parsed first PMT: ${JSON.stringify(pmt)}`);
-            }
-            this.pmt_ = pmt;
-            if (pmt.common_pids.h264 || pmt.common_pids.h265) {
-                this.has_video_ = true;
-            }
-            if (pmt.common_pids.adts_aac || pmt.common_pids.loas_aac || pmt.common_pids.ac3 || pmt.common_pids.opus || pmt.common_pids.mp3) {
-                this.has_audio_ = true;
+        if (this.pmt_ == undefined) {
+            Log.v(this.TAG, `Parsed first PMT: ${JSON.stringify(pmt)}`);
+        }
+        const getCodec = (pids:object, codecs:string[]) => Object.keys(pids).find(key => codecs.indexOf(key) >= 0 && typeof pids[key] === 'number');
+        if (this.has_video_) {
+            const videoCodecs = ['h264', 'h265'];
+            const oldCodec = getCodec(this.pmt_.common_pids, videoCodecs);
+            const newCodec = getCodec(pmt.common_pids, videoCodecs);
+            if (isNaN(video_pid) || oldCodec !== newCodec) {
+                if (this.video_init_segment_dispatched_) {
+                    // flush stashed frames before changing codec metadata
+                    this.dispatchVideoMediaSegment();
+                }
+                this.media_info_.videoCodec = null;
+                this.video_metadata_ = {vps:undefined, sps:undefined, pps:undefined, details:undefined};
+                this.video_init_segment_dispatched_ = false;
+                delete this.section_slice_queues_[this.pmt_.common_pids[oldCodec]];
             }
         }
+        if (this.has_audio_) {
+            const audioCodecs = ['adts_aac', 'loas_aac', 'ac3', 'eac3', 'opus', 'mp3'];
+            const oldCodec = getCodec(this.pmt_.common_pids, audioCodecs);
+            const newCodec = getCodec(pmt.common_pids, audioCodecs);
+            if (isNaN(audio_pid) || oldCodec !== newCodec) {
+                if (this.audio_init_segment_dispatched_) {
+                    // flush stashed frames before notify new AudioSpecificConfig
+                    this.dispatchAudioMediaSegment();
+                }
+                this.media_info_.audioCodec = null;
+                this.audio_metadata_ = {codec:undefined, audio_object_type:undefined, sampling_freq_index:undefined, sampling_frequency:undefined, channel_config:undefined};
+                this.audio_init_segment_dispatched_ = false;
+                delete this.section_slice_queues_[this.pmt_.common_pids[oldCodec]];
+            }
+        }
+        this.pmt_ = pmt;
+        this.has_video_ = !isNaN(video_pid);
+        this.has_audio_ = !isNaN(audio_pid);
     }
 
     private parseSCTE35(data: Uint8Array): void {
@@ -2004,8 +2058,19 @@ class TSDemuxer extends BaseDemuxer {
             + data[7] * 131072 // 1 << 17
             + data[8] * 512 // 1 << 9
             + data[9] * 2 // 1 << 1
-            + (data[10] & 0x80) / 128 // 1 >> 7
-            + this.timestamp_offset_;
+            + (data[10] & 0x80) / 128; // 1 >> 7
+        if (!!this.config_.experimental_FixMpegtsTimestampDiscontinuity) {
+            if (!isNaN(this.last_pcr_base0_) && (pcr_base < this.last_pcr_base0_ ? 0x200000000 : 0) + pcr_base > this.last_pcr_base0_ + 1000 * 90) { // 1000 [ms]
+                Log.w(this.TAG, `Detected timestamp discontinuity: ${this.last_pcr_base0_} > ${pcr_base}`);
+                this.timestamp_offset_ = this.last_pcr_base_ + 100 * 90 - pcr_base;
+                this.dispatchAudioVideoMediaSegment();
+                this.pes_slice_queues_ = [];
+                this.section_slice_queues_ = [];
+                // causes lip-sync broken...
+            }
+            this.last_pcr_base0_ = pcr_base;
+        }
+        pcr_base += this.timestamp_offset_;
         if (pcr_base + 0x100000000 < this.last_pcr_base_) {
             pcr_base += 0x200000000; // pcr_base wraparound
             this.timestamp_offset_ += 0x200000000;

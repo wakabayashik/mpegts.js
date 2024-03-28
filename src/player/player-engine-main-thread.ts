@@ -33,6 +33,7 @@ import LoadingController from './loading-controller';
 import StartupStallJumper from './startup-stall-jumper';
 import LiveLatencyChaser from './live-latency-chaser';
 import LiveLatencySynchronizer from './live-latency-synchronizer';
+import MediaedgeSeekingHandler from '../mediaedge/seeking-handler';
 
 class PlayerEngineMainThread implements PlayerEngine {
 
@@ -211,6 +212,9 @@ class PlayerEngineMainThread implements PlayerEngine {
         });
         this._transmuxer.on(TransmuxingEvents.MEDIA_INFO, (mediaInfo: MediaInfo) => {
             this._media_info = mediaInfo;
+            if (this._seeking_handler instanceof MediaedgeSeekingHandler) {
+                (this._seeking_handler as MediaedgeSeekingHandler).seekable = !!this._media_info?.duration;
+            }
             this._emitter.emit(PlayerEvents.MEDIA_INFO, Object.assign({}, mediaInfo));
         });
         this._transmuxer.on(TransmuxingEvents.STATISTICS_INFO, (statInfo: any) => {
@@ -250,11 +254,21 @@ class PlayerEngineMainThread implements PlayerEngine {
             this._emitter.emit(PlayerEvents.PES_PRIVATE_DATA_ARRIVED, private_data);
         });
 
-        this._seeking_handler = new SeekingHandler(
-            this._config,
-            this._media_element,
-            this._onRequiredUnbufferedSeek.bind(this)
-        );
+        if (this._media_data_source?.type === 'mediaedge') {
+            this._seeking_handler = new MediaedgeSeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this),
+                this._onRequestDirectSeek.bind(this),
+                this._onRequestPauseTransmuxer.bind(this)
+            );
+        } else {
+            this._seeking_handler = new SeekingHandler(
+                this._config,
+                this._media_element,
+                this._onRequiredUnbufferedSeek.bind(this)
+            );
+        }
 
         this._loading_controller = new LoadingController(
             this._config,
@@ -391,18 +405,22 @@ class PlayerEngineMainThread implements PlayerEngine {
     private _onMediaLoadedMetadata(e: any): void {
         this._loaded_metadata_received = true;
         if (this._pending_seek_time != null) {
-            this._seeking_handler.seek(this._pending_seek_time);
+            this._seeking_handler?.seek(this._pending_seek_time);
             this._pending_seek_time = null;
         }
     }
 
     private _onRequestDirectSeek(target: number): void {
-        this._seeking_handler.directSeek(target);
+        this._seeking_handler?.directSeek(target);
     }
 
     private _onRequiredUnbufferedSeek(milliseconds: number): void {
         this._mse_controller.flush();
-        this._transmuxer.seek(milliseconds);
+        if (this._media_data_source?.type === 'mediaedge') {
+            this._transmuxer.seek({milliseconds, playspeed:this._media_element?.playbackRate});
+        } else {
+            this._transmuxer.seek(milliseconds);
+        }
     }
 
     private _onRequestPauseTransmuxer(): void {

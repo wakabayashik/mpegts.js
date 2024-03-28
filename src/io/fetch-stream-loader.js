@@ -137,6 +137,7 @@ class FetchStreamLoader extends BaseLoader {
                         this._onURLRedirect(redirectedURL);
                     }
                 }
+                this._fetchDone(res);
 
                 let lengthHeader = res.headers.get('Content-Length');
                 if (lengthHeader != null) {
@@ -182,6 +183,10 @@ class FetchStreamLoader extends BaseLoader {
                 } catch (e) {}
             }
         }
+    }
+
+    _fetchDone(res) {
+        // overridden by 'MediaedgeFetchStreamLoader'
     }
 
     _pump(reader) {  // ReadableStreamReader

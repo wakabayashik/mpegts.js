@@ -248,6 +248,7 @@ class MSEController {
                 }
             } else {
                 Log.v(this.TAG, `Notice: ${is.type} mimeType changed, origin: ${this._mimeTypes[is.type]}, target: ${mimeType}`);
+                is.changeType = mimeType;
             }
             this._mimeTypes[is.type] = mimeType;
         }
@@ -475,6 +476,17 @@ class MSEController {
                         this._sourceBuffers[type].timestampOffset = targetOffset;
                     }
                     delete segment.timestampOffset;
+                }
+
+                if (segment.changeType) {
+                    try {
+                        if (this._mediaSource.readyState === 'open') {
+                            this._sourceBuffers[type].changeType(segment.changeType);
+                        }
+                    } catch (error) {
+                        Log.e(this.TAG, `Failed to change source buffer type to '${segment.changeType}'`, error.message);
+                    }
+                    delete segment.changeType;
                 }
 
                 if (!segment.data || segment.data.byteLength === 0) {

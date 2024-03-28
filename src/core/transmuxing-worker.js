@@ -21,6 +21,7 @@ import LoggingControl from '../utils/logging-control.js';
 import Polyfill from '../utils/polyfill.js';
 import TransmuxingController from './transmuxing-controller.js';
 import TransmuxingEvents from './transmuxing-events';
+import MediaedgeTransmuxingController from '../mediaedge/transmuxing-controller.js';
 
 /* post message to worker:
    data: {
@@ -46,7 +47,11 @@ let TransmuxingWorker = function (self) {
     self.addEventListener('message', function (e) {
         switch (e.data.cmd) {
             case 'init':
-                controller = new TransmuxingController(e.data.param[0], e.data.param[1]);
+                if (e.data.param[0]?.type === 'mediaedge') {
+                    controller = new MediaedgeTransmuxingController(e.data.param[0], e.data.param[1]);
+                } else {
+                    controller = new TransmuxingController(e.data.param[0], e.data.param[1]);
+                }
                 controller.on(TransmuxingEvents.IO_ERROR, onIOError.bind(this));
                 controller.on(TransmuxingEvents.DEMUX_ERROR, onDemuxError.bind(this));
                 controller.on(TransmuxingEvents.INIT_SEGMENT, onInitSegment.bind(this));
