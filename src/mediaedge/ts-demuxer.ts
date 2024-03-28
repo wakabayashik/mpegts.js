@@ -16,7 +16,6 @@
  * limitations under the License.
  */
 
-import Log from '../utils/logger.js';
 import TSDemuxer from '../demux/ts-demuxer';
 
 class MediaedgeTSDemuxer extends TSDemuxer {
