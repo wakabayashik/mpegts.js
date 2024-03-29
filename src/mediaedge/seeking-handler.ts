@@ -53,6 +53,8 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     public override destroy(): void {
         clearTimeout(this._timer);
         this._off();
+        this._startup_stall_jumper?.destroy();
+        this._startup_stall_jumper = null;
         super.destroy();
     }
 
