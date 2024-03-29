@@ -80,6 +80,9 @@ class Features {
         features.nativeWebmVP8Playback = Features.supportNativeMediaPlayback('video/webm; codecs="vp8.0, vorbis"');
         features.nativeWebmVP9Playback = Features.supportNativeMediaPlayback('video/webm; codecs="vp9"');
 
+        // 'mediaedge' type playback (forked at https://github.com/wakabayashik/mpegts.js)
+        features.mediaedgeTypePlayback = true;
+
         return features;
     }
 
