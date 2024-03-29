@@ -2059,7 +2059,7 @@ class TSDemuxer extends BaseDemuxer {
             + data[8] * 512 // 1 << 9
             + data[9] * 2 // 1 << 1
             + (data[10] & 0x80) / 128; // 1 >> 7
-        if (!!this.config_.experimental_FixMpegtsTimestampDiscontinuity) {
+        if (!!this.config_.fixMpegtsTimestampDiscontinuity) {
             if (!isNaN(this.last_pcr_base0_) && (pcr_base < this.last_pcr_base0_ ? 0x200000000 : 0) + pcr_base > this.last_pcr_base0_ + 1000 * 90) { // 1000 [ms]
                 Log.w(this.TAG, `Detected timestamp discontinuity: ${this.last_pcr_base0_} > ${pcr_base}`);
                 this.timestamp_offset_ = this.last_pcr_base_ + 100 * 90 - pcr_base;
