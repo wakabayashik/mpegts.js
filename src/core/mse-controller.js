@@ -484,7 +484,7 @@ class MSEController {
                             this._sourceBuffers[type].changeType(segment.changeType);
                         }
                     } catch (error) {
-                        Log.e(this.TAG, `Failed to change source buffer type to '${segment.changeType}'`, error.message);
+                        Log.e(this.TAG, `Failed to change source buffer type to '${segment.changeType}': ${error.message}`);
                     }
                     delete segment.changeType;
                 }
