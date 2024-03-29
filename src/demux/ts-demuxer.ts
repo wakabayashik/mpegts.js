@@ -2064,9 +2064,14 @@ class TSDemuxer extends BaseDemuxer {
                 Log.w(this.TAG, `Detected timestamp discontinuity: ${this.last_pcr_base0_} > ${pcr_base}`);
                 this.timestamp_offset_ = this.last_pcr_base_ + 100 * 90 - pcr_base;
                 this.dispatchAudioVideoMediaSegment();
+                this.resetMediaInfo();
+                this.video_metadata_ = {vps:undefined, sps:undefined, pps:undefined, details:undefined};
+                this.video_init_segment_dispatched_ = false;
+                this.audio_metadata_ = {codec:undefined, audio_object_type:undefined, sampling_freq_index:undefined, sampling_frequency:undefined, channel_config:undefined};
+                this.audio_init_segment_dispatched_ = false;
                 this.pes_slice_queues_ = [];
                 this.section_slice_queues_ = [];
-                // causes lip-sync broken...
+                // may cause lip-sync broken...
             }
             this.last_pcr_base0_ = pcr_base;
         }
