@@ -92,9 +92,13 @@ class MediaedgeTransmuxingController extends TransmuxingController {
                 this._remuxer._calculateDtsBase(audioTrack, videoTrack);
                 this._remuxer._dtsBase -= this.position;
                 this._remuxer.remux(audioTrack, videoTrack);
-                this._remuxer.bindDataSource(this._demuxer);
+                // this._remuxer.bindDataSource(this._demuxer);
+                demuxer.onDataAvailable = this._remuxer.remux.bind(this._remuxer);
             };
-            demuxer.onTrackMetadata = (type, metadata) => this._remuxer._onTrackMetadataReceived(type, metadata);
+            demuxer.onTrackMetadata = (type, metadata) => {
+                if (type === 'audio') this._remuxer.insertDiscontinuity();
+                this._remuxer._onTrackMetadataReceived(type, metadata);
+            }
         } else {
             this._remuxer.bindDataSource(this._demuxer); // live
         }

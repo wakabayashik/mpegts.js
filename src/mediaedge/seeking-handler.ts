@@ -51,7 +51,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     }
 
     public override destroy(): void {
-        clearTimeout(this._timer);
+        window.clearTimeout(this._timer);
         this._off();
         this._startup_stall_jumper?.destroy();
         this._startup_stall_jumper = null;
@@ -70,15 +70,20 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         // Defer the unbuffered seeking since the seeking bar maybe still being draged
         this._seek_request_record_clocktime = SeekingHandler._getClockTime();
         window.setTimeout(this._pollAndApplyUnbufferedSeek.bind(this), 50);
+        window.clearTimeout(this._timer);
         if (this._media_element.paused) {
             this._pausedPosition = this._media_element.currentTime;
-            clearTimeout(this._timer);
-            this._timer = setTimeout(() => this._media_element.paused ? this._on_pause_transmuxer() : undefined, 500);
+            this._timer = window.setTimeout(() => this._media_element.paused ? this._on_pause_transmuxer() : undefined, 500);
+        } else {
+            this._timer = window.setTimeout(() => {
+                if (this._startup_stall_jumper) this._startup_stall_jumper.destroy();
+                this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
+            }, 200);
         }
     }
 
     protected override _isPositionBuffered(seconds: number): boolean {
-        if (!this.seekable) {
+        if (!this._seekable) {
             return super._isPositionBuffered(seconds);
         }
         return false;
