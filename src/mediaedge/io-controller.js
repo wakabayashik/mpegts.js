@@ -78,8 +78,8 @@ class MediaedgeIOController extends IOController {
     }
 
     /*override*/ open(optionalFrom, playspeed) {
-        this._currentRange = {from: 0, to: -1};
-        if (optionalFrom) {
+        this._currentRange = {to: -1};
+        if (typeof optionalFrom === 'number' && isFinite(optionalFrom)) {
             this._currentRange.from = optionalFrom;
         }
 

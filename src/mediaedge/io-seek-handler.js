@@ -57,7 +57,9 @@ class MediaedgeIoSeekHandler {
                 }
             }
         } else {
-            if (range.from !== 0) {
+            if (range.from === 0) {
+                params.delete('starttime');
+            } else if (typeof range.from === 'number' && !isNaN(range.from)) {
                 const adjust = (this.config?.mediaedgeSeekAdjust ?? 1000) || 0;
                 params.set('starttime', '' + (Math.max(0, range.from - adjust) / 1000)); // [sec]
             }
