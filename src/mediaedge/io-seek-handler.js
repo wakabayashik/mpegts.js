@@ -61,7 +61,7 @@ class MediaedgeIoSeekHandler {
                 params.delete('starttime');
             } else if (typeof range.from === 'number' && !isNaN(range.from)) {
                 const adjust = (this.config?.mediaedgeSeekAdjust ?? 1000) || 0;
-                params.set('starttime', '' + (Math.max(0, range.from - adjust) / 1000)); // [sec]
+                params.set('starttime', '' + (Math.floor(Math.max(0, range.from - adjust)) / 1000)); // [sec]
             }
             if (!params.has('burst')) {
                 const burst = this.config?.mediaedgeBurst ?? '10000/3000';

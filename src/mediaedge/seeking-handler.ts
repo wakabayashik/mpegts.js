@@ -19,14 +19,20 @@
 import SeekingHandler from "../player/seeking-handler";
 import StartupStallJumper from "../player/startup-stall-jumper";
 
+enum State {
+    unknonwn = 0,
+    playing = 1,
+    paused = 2,
+    seeking = 3,
+}
+
 class MediaedgeSeekingHandler extends SeekingHandler {
 
     private _on_direct_seek: (target: number) => void;
     private _on_pause_transmuxer: () => void;
     private _startup_stall_jumper?: StartupStallJumper = null;
-    private _pausedPosition: number = NaN;
-    private _timer: any = null;
     private _seekable: boolean = false;
+    private _state_: State = State.unknonwn;
 
     public constructor(config: any, media_element: HTMLMediaElement,
         on_unbuffered_seek: (milliseconds: number) => void,
@@ -37,9 +43,20 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         // console.debug(this.TAG, 'constructor', config);
         this._on_direct_seek = on_direct_seek;
         this._on_pause_transmuxer = on_pause_transmuxer;
+        this.e.onSeeked = this._onSeeked.bind(this);
         this.e.onPlay = this._onPlay.bind(this);
         this.e.onPause = this._onPause.bind(this);
         this.e.onRateChange = this._onRateChange.bind(this);
+        this._state_ = this._media_element.paused ? State.paused : State.playing;
+    }
+
+    private get _state() {
+        return this._state_;
+    }
+
+    private set _state(value) {
+        // console.log(this.TAG, `update state ${State[this._state_]} -> ${State[value]}`);
+        this._state_ = value;
     }
 
     public set seekable(value: boolean) {
@@ -51,7 +68,6 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     }
 
     public override destroy(): void {
-        window.clearTimeout(this._timer);
         this._off();
         this._startup_stall_jumper?.destroy();
         this._startup_stall_jumper = null;
@@ -70,16 +86,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         // Defer the unbuffered seeking since the seeking bar maybe still being draged
         this._seek_request_record_clocktime = SeekingHandler._getClockTime();
         window.setTimeout(this._pollAndApplyUnbufferedSeek.bind(this), 50);
-        window.clearTimeout(this._timer);
-        if (this._media_element.paused) {
-            this._pausedPosition = this._media_element.currentTime;
-            this._timer = window.setTimeout(() => this._media_element.paused ? this._on_pause_transmuxer() : undefined, 500);
-        } else {
-            this._timer = window.setTimeout(() => {
-                if (this._startup_stall_jumper) this._startup_stall_jumper.destroy();
-                this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
-            }, 200);
-        }
+        this._state = State.seeking;
     }
 
     protected override _isPositionBuffered(seconds: number): boolean {
@@ -90,6 +97,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     }
 
     private _on() {
+        this._media_element.addEventListener('seeked', this.e.onSeeked);
         this._media_element.addEventListener('play', this.e.onPlay);
         this._media_element.addEventListener('pause', this.e.onPause);
         this._media_element.addEventListener('ratechange', this.e.onRateChange);
@@ -99,16 +107,26 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         this._media_element.removeEventListener('ratechange', this.e.onRateChange);
         this._media_element.removeEventListener('pause', this.e.onPause);
         this._media_element.removeEventListener('play', this.e.onPlay);
+        this._media_element.removeEventListener('seeked', this.e.onSeeked);
+    }
+
+    private _onSeeked(e: Event) {
+        if (this._state === State.paused) this._media_element.play();
+        this._state = this._media_element.paused ? State.paused : State.playing;
+        this._startup_stall_jumper?.destroy();
+        this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
+        if (this._media_element.paused) this._on_pause_transmuxer();
     }
 
     private _onPlay(e: Event) {
-        if (this._startup_stall_jumper) this._startup_stall_jumper.destroy();
-        this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
-        return this._on_unbuffered_seek(this._pausedPosition * 1000); // sec to millisec
+        if (this._state !== State.paused) return; // skip events while seeking
+        this._media_element.pause();
+        return this._on_unbuffered_seek(this._media_element.currentTime * 1000); // sec to millisec
     }
 
     private _onPause(e: Event) {
-        this._pausedPosition = this._media_element.currentTime;
+        if (this._state !== State.playing) return; // skip events while seeking
+        this._state = State.paused;
         return this._on_pause_transmuxer();
     }
 
