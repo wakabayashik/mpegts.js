@@ -64,7 +64,6 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         }
         this._loadSegment(targetSegmentIndex, milliseconds, playspeed);
         this._pendingResolveSeekPoint = milliseconds;
-        if (this._mediaInfo) this._reportSegmentMediaInfo(targetSegmentIndex);
         this._enableStatisticsReporter();
     }
 
