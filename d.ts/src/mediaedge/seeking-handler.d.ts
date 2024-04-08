@@ -4,10 +4,8 @@ declare class MediaedgeSeekingHandler extends SeekingHandler {
     private _on_pause_transmuxer;
     private _startup_stall_jumper?;
     private _seekable;
-    private _state_;
+    private _state;
     constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, on_direct_seek: (target: number) => void, on_pause_transmuxer: () => void);
-    private get _state();
-    private set _state(value);
     set seekable(value: boolean);
     destroy(): void;
     protected _onMediaSeeking(e: Event): void;

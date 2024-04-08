@@ -24,6 +24,7 @@ enum State {
     playing = 1,
     paused = 2,
     seeking = 3,
+    waitingSeeked = 4,
 }
 
 class MediaedgeSeekingHandler extends SeekingHandler {
@@ -32,7 +33,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     private _on_pause_transmuxer: () => void;
     private _startup_stall_jumper?: StartupStallJumper = null;
     private _seekable: boolean = false;
-    private _state_: State = State.unknonwn;
+    private _state: State = State.unknonwn;
 
     public constructor(config: any, media_element: HTMLMediaElement,
         on_unbuffered_seek: (milliseconds: number) => void,
@@ -47,16 +48,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         this.e.onPlay = this._onPlay.bind(this);
         this.e.onPause = this._onPause.bind(this);
         this.e.onRateChange = this._onRateChange.bind(this);
-        this._state_ = this._media_element.paused ? State.paused : State.playing;
-    }
-
-    private get _state() {
-        return this._state_;
-    }
-
-    private set _state(value) {
-        // console.log(this.TAG, `update state ${State[this._state_]} -> ${State[value]}`);
-        this._state_ = value;
+        this._state = this._media_element.paused ? State.paused : State.playing;
     }
 
     public set seekable(value: boolean) {
@@ -82,11 +74,17 @@ class MediaedgeSeekingHandler extends SeekingHandler {
             this._request_set_current_time = false;
             return;
         }
+        if (this._state !== State.waitingSeeked) {
+            this._state = State.seeking;
+            if (!this._media_element.paused) {
+                this._media_element.pause(); // should be paused temporarily to avoid currentTime being changed
+                this._state = State.waitingSeeked;
+            }
+        }
         // else: Prepare for unbuffered seeking
         // Defer the unbuffered seeking since the seeking bar maybe still being draged
         this._seek_request_record_clocktime = SeekingHandler._getClockTime();
         window.setTimeout(this._pollAndApplyUnbufferedSeek.bind(this), 50);
-        this._state = State.seeking;
     }
 
     protected override _isPositionBuffered(seconds: number): boolean {
@@ -111,7 +109,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
     }
 
     private _onSeeked(e: Event) {
-        if (this._state === State.paused) this._media_element.play();
+        if (this._state === State.waitingSeeked) this._media_element.play();
         this._state = this._media_element.paused ? State.paused : State.playing;
         this._startup_stall_jumper?.destroy();
         this._startup_stall_jumper = new StartupStallJumper(this._media_element, this._on_direct_seek);
@@ -120,8 +118,9 @@ class MediaedgeSeekingHandler extends SeekingHandler {
 
     private _onPlay(e: Event) {
         if (this._state !== State.paused) return; // skip events while seeking
-        this._media_element.pause();
-        return this._on_unbuffered_seek(this._media_element.currentTime * 1000); // sec to millisec
+        this._media_element.pause(); // pause temporarily until seeked
+        this._state = State.waitingSeeked;
+        return this._on_unbuffered_seek(Math.floor(this._media_element.currentTime * 1000)); // sec to millisec
     }
 
     private _onPause(e: Event) {
@@ -132,7 +131,7 @@ class MediaedgeSeekingHandler extends SeekingHandler {
 
     private _onRateChange(e: Event) {
         if (this._media_element.paused) return;
-        return this._on_unbuffered_seek(this._media_element.currentTime * 1000); // sec to millisec
+        return this._on_unbuffered_seek(Math.floor(this._media_element.currentTime * 1000)); // sec to millisec
     }
 
 }
