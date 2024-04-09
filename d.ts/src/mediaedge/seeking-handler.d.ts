@@ -5,6 +5,7 @@ declare class MediaedgeSeekingHandler extends SeekingHandler {
     private _startup_stall_jumper?;
     private _seekable;
     private _state;
+    private _timer;
     constructor(config: any, media_element: HTMLMediaElement, on_unbuffered_seek: (milliseconds: number) => void, on_direct_seek: (target: number) => void, on_pause_transmuxer: () => void);
     set seekable(value: boolean);
     destroy(): void;
@@ -12,6 +13,7 @@ declare class MediaedgeSeekingHandler extends SeekingHandler {
     protected _isPositionBuffered(seconds: number): boolean;
     private _on;
     private _off;
+    private _setState;
     private _onSeeked;
     private _onPlay;
     private _onPause;
