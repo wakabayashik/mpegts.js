@@ -18,8 +18,11 @@
 
 import Log from '../utils/logger.js';
 import TSDemuxer from '../demux/ts-demuxer';
+import DemuxErrors from '../demux/demux-errors.js';
 import MP4Remuxer from '../remux/mp4-remuxer.js';
 import TransmuxingController from '../core/transmuxing-controller.js';
+import TransmuxingEvents from '../core/transmuxing-events';
+import {LoaderErrors} from '../io/loader.js';
 import MediaedgeTSDemuxer from './ts-demuxer';
 import MediaedgeIOController from './io-controller.js';
 
@@ -33,9 +36,11 @@ class MediaedgeTransmuxingController extends TransmuxingController {
         this.position = null;
         this.duration = null;
         this.timeProgressing = false;
+        this.mediaInfoDone = false;
     }
 
     /*override*/ _loadSegment(segmentIndex, optionalFrom, playspeed) {
+        this.mediaInfoDone = false;
         this._currentSegmentIndex = segmentIndex;
         const dataSource = this._mediaDataSource.segments[segmentIndex];
 
@@ -105,6 +110,20 @@ class MediaedgeTransmuxingController extends TransmuxingController {
 
         this._remuxer.onInitSegment = this._onRemuxerInitSegmentArrival.bind(this);
         this._remuxer.onMediaSegment = this._onRemuxerMediaSegmentArrival.bind(this);
+    }
+
+    /*override*/ _onMediaInfo(mediaInfo) {
+        this.mediaInfoDone = true;
+        return super._onMediaInfo(mediaInfo);
+    }
+
+    /*override*/ _onIOComplete(extraData) {
+        if (this.mediaInfoDone) {
+            super._onIOComplete(extraData);
+        } else {
+            const info = {code:-1, msg:'Reached the end of stream before available seek point!'};
+            this._onIOException(LoaderErrors.UNRECOVERABLE_EARLY_EOF, info);
+        }
     }
 
     _onDataArrival(chunks, byte_start) {

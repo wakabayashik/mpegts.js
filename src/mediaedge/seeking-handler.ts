@@ -122,8 +122,8 @@ class MediaedgeSeekingHandler extends SeekingHandler {
         }, timeoutSeeked);
     }
 
-    private _onSeeked(e: Event): void {
-        if (this._state === State.waitingSeeked) this._media_element.play();
+    private async _onSeeked(e: Event): Promise<void> {
+        if (this._state === State.waitingSeeked) await this._media_element.play().catch(err => Log.w(this.TAG, '' + err));
         this._state = this._media_element.paused ? State.paused : State.playing;
         if (this._media_element.paused) this._on_pause_transmuxer();
     }
