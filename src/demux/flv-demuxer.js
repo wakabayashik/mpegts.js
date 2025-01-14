@@ -25,6 +25,7 @@ import {IllegalStateException} from '../utils/exception.js';
 import H265Parser from './h265-parser.js';
 import buffersAreEqual from '../utils/typedarray-equality.ts';
 import AV1OBUParser from './av1-parser.ts';
+import ExpGolomb from './exp-golomb.js';
 
 function Swap16(src) {
     return (((src >>> 8) & 0xFF) |
@@ -492,6 +493,29 @@ class FLVDemuxer {
         let soundSpec = v.getUint8(0);
 
         let soundFormat = soundSpec >>> 4;
+        if (soundFormat === 9) { // Enhanced FLV
+            if (dataSize <= 5) {
+                Log.w(this.TAG, 'Flv: Invalid audio packet, missing AudioFourCC in Ehnanced FLV payload!');
+                return;
+            }
+            let packetType = soundSpec & 0x0F;
+            let fourcc = String.fromCharCode(... (new Uint8Array(arrayBuffer, dataOffset, dataSize)).slice(1, 5));
+
+            switch(fourcc){
+            case 'Opus':
+                this._parseOpusAudioPacket(arrayBuffer, dataOffset + 5, dataSize - 5, tagTimestamp, packetType);
+                break;
+            case 'fLaC':
+                this._parseFlacAudioPacket(arrayBuffer, dataOffset + 5, dataSize - 5, tagTimestamp, packetType);
+                break;
+            default:
+                this._onError(DemuxErrors.CODEC_UNSUPPORTED, 'Flv: Unsupported audio codec: ' + fourcc);
+            }
+
+            return;
+        }
+        // Legacy FLV
+
         if (soundFormat !== 2 && soundFormat !== 10) {  // MP3 or AAC
             this._onError(DemuxErrors.CODEC_UNSUPPORTED, 'Flv: Unsupported audio codec idx: ' + soundFormat);
             return;
@@ -830,6 +854,229 @@ class FLVDemuxer {
         }
 
         return result;
+    }
+
+    _parseOpusAudioPacket(arrayBuffer, dataOffset, dataSize, tagTimestamp, packetType) {
+       if (packetType === 0) {  // OpusSequenceHeader
+            this._parseOpusSequenceHeader(arrayBuffer, dataOffset, dataSize);
+        } else if (packetType === 1) {  // OpusCodedData
+            this._parseOpusAudioData(arrayBuffer, dataOffset, dataSize, tagTimestamp);
+        } else if (packetType === 2) {
+            // empty, Opus end of sequence
+        } else {
+            this._onError(DemuxErrors.FORMAT_ERROR, `Flv: Invalid video packet type ${packetType}`);
+            return;
+        }
+    }
+
+    _parseOpusSequenceHeader(arrayBuffer, dataOffset, dataSize) {
+        if (dataSize <= 16) {
+            Log.w(this.TAG, 'Flv: Invalid OpusSequenceHeader, lack of data!');
+            return;
+        }
+        let meta = this._audioMetadata;
+        let track = this._audioTrack;
+
+        if (!meta) {
+            if (this._hasAudio === false && this._hasAudioFlagOverrided === false) {
+                this._hasAudio = true;
+                this._mediaInfo.hasAudio = true;
+            }
+
+            // initial metadata
+            meta = this._audioMetadata = {};
+            meta.type = 'audio';
+            meta.id = track.id;
+            meta.timescale = this._timescale;
+            meta.duration = this._duration;
+        }
+
+        // Identification Header
+        let v = new DataView(arrayBuffer, dataOffset, dataSize);
+        v.setUint8(8 + 0, 0); // set version to 0
+        let channelCount = v.getUint8(8 + 1); // Opus Header + 1
+        v.setUint16(8 + 2, v.getUint16(8 + 2, true), false); // Big Endian to Little Endian for Pre-skip
+        let samplingFrequence = v.getUint32(8 + 4, true); // Opus Header + 4
+        v.setUint32(8 + 4, v.getUint32(8 + 4, true), false); // Big Endian to Little Endian for Input Sample Rate
+        let config = new Uint8Array(arrayBuffer, dataOffset + 8, dataSize - 8);
+
+        let misc = {
+            config,
+            channelCount,
+            samplingFrequence,
+            codec: 'opus',
+            originalCodec: 'opus',
+        };
+        if (meta.config) {
+            if (buffersAreEqual(misc.config, meta.config)) {
+                // If OpusSequenceHeader is not changed, ignore it to avoid generating initialization segment repeatedly
+                return;
+            } else {
+                Log.w(this.TAG, 'OpusSequenceHeader has been changed, re-generate initialization segment');
+            }
+        }
+        meta.audioSampleRate = misc.samplingFrequence;
+        meta.channelCount = misc.channelCount;
+        meta.codec = misc.codec;
+        meta.originalCodec = misc.originalCodec;
+        meta.config = misc.config;
+        // The decode result of an opus sample is 20ms
+        meta.refSampleDuration = 20;
+        Log.v(this.TAG, 'Parsed OpusSequenceHeader');
+
+        if (this._isInitialMetadataDispatched()) {
+            // Non-initial metadata, force dispatch (or flush) parsed frames to remuxer
+            if (this._dispatch && (this._audioTrack.length || this._videoTrack.length)) {
+                this._onDataAvailable(this._audioTrack, this._videoTrack);
+            }
+        } else {
+            this._audioInitialMetadataDispatched = true;
+        }
+        // then notify new metadata
+        this._dispatch = false;
+        this._onTrackMetadata('audio', meta);
+
+        let mi = this._mediaInfo;
+        mi.audioCodec = meta.originalCodec;
+        mi.audioSampleRate = meta.audioSampleRate;
+        mi.audioChannelCount = meta.channelCount;
+        if (mi.hasVideo) {
+            if (mi.videoCodec != null) {
+                mi.mimeType = 'video/x-flv; codecs="' + mi.videoCodec + ',' + mi.audioCodec + '"';
+            }
+        } else {
+            mi.mimeType = 'video/x-flv; codecs="' + mi.audioCodec + '"';
+        }
+        if (mi.isComplete()) {
+            this._onMediaInfo(mi);
+        }
+    }
+
+    _parseOpusAudioData(arrayBuffer, dataOffset, dataSize, tagTimestamp) {
+        let track = this._audioTrack;
+
+        let data = new Uint8Array(arrayBuffer, dataOffset, dataSize);
+        let dts = this._timestampBase + tagTimestamp;
+        let opusSample = {unit: data, length: data.byteLength, dts: dts, pts: dts};
+
+        track.samples.push(opusSample);
+        track.length += data.length;
+    }
+
+    _parseFlacAudioPacket(arrayBuffer, dataOffset, dataSize, tagTimestamp, packetType) {
+        if (packetType === 0) {  // FlacSequenceHeader
+            this._parseFlacSequenceHeader(arrayBuffer, dataOffset, dataSize);
+        } else if (packetType === 1) {  // FlacCodedData
+            this._parseFlacAudioData(arrayBuffer, dataOffset, dataSize, tagTimestamp);
+        } else if (packetType === 2) {
+            // empty, Flac end of sequence
+        } else {
+            this._onError(DemuxErrors.FORMAT_ERROR, `Flv: Invalid Flac audio packet type ${packetType}`);
+            return;
+        }
+    }
+
+    _parseFlacSequenceHeader(arrayBuffer, dataOffset, dataSize) {
+        let meta = this._audioMetadata;
+        let track = this._audioTrack;
+
+        if (!meta) {
+            if (this._hasAudio === false && this._hasAudioFlagOverrided === false) {
+                this._hasAudio = true;
+                this._mediaInfo.hasAudio = true;
+            }
+
+            // initial metadata
+            meta = this._audioMetadata = {};
+            meta.type = 'audio';
+            meta.id = track.id;
+            meta.timescale = this._timescale;
+            meta.duration = this._duration;
+        }
+
+        // METADATA_BLOCK_HEADER
+        let header = new Uint8Array(arrayBuffer, dataOffset + 4, dataSize - 4);
+        let gb = new ExpGolomb(header);
+        let minimum_block_size = gb.readBits(16); // minimum_block_size
+        let maximum_block_size = gb.readBits(16); // maximum_block_size
+        let block_size = maximum_block_size === minimum_block_size ? maximum_block_size : null;
+        gb.readBits(24); // minimum_frame_size
+        gb.readBits(24); // maximum_frame_size
+        let samplingFrequence = gb.readBits(20);
+        let channelCount = gb.readBits(3) + 1;
+        let sampleSize = gb.readBits(5) + 1;
+        gb.destroy();
+
+        let config = new Uint8Array(header.byteLength + 4);
+        config.set(header, 4);
+        config[0] = 1 << 7;
+        config[1] = (header.byteLength >>> 16) & 0xFF;
+        config[2] = (header.byteLength >>>  8) & 0xFF;
+        config[3] = (header.byteLength >>>  0) & 0xFF;
+
+        let misc = {
+            config,
+            channelCount,
+            samplingFrequence,
+            sampleSize,
+            codec: 'flac',
+            originalCodec: 'flac',
+        };
+        if (meta.config) {
+            if (buffersAreEqual(misc.config, meta.config)) {
+                // If FlacSequenceHeader is not changed, ignore it to avoid generating initialization segment repeatedly
+                return;
+            } else {
+                Log.w(this.TAG, 'FlacSequenceHeader has been changed, re-generate initialization segment');
+            }
+        }
+        meta.audioSampleRate = misc.samplingFrequence;
+        meta.channelCount = misc.channelCount;
+        meta.sampleSize = misc.sampleSize;
+        meta.codec = misc.codec;
+        meta.originalCodec = misc.originalCodec;
+        meta.config = misc.config;
+        meta.refSampleDuration = block_size != null ? block_size * 1000 / misc.samplingFrequence : null; // practical encoder sends 4608 blobksize (lower bound limitation)
+
+        Log.v(this.TAG, 'Parsed FlacSequenceHeader');
+
+        if (this._isInitialMetadataDispatched()) {
+            // Non-initial metadata, force dispatch (or flush) parsed frames to remuxer
+            if (this._dispatch && (this._audioTrack.length || this._videoTrack.length)) {
+                this._onDataAvailable(this._audioTrack, this._videoTrack);
+            }
+        } else {
+            this._audioInitialMetadataDispatched = true;
+        }
+        // then notify new metadata
+        this._dispatch = false;
+        this._onTrackMetadata('audio', meta);
+
+        let mi = this._mediaInfo;
+        mi.audioCodec = meta.originalCodec;
+        mi.audioSampleRate = meta.audioSampleRate;
+        mi.audioChannelCount = meta.channelCount;
+        if (mi.hasVideo) {
+            if (mi.videoCodec != null) {
+                mi.mimeType = 'video/x-flv; codecs="' + mi.videoCodec + ',' + mi.audioCodec + '"';
+            }
+        } else {
+            mi.mimeType = 'video/x-flv; codecs="' + mi.audioCodec + '"';
+        }
+        if (mi.isComplete()) {
+            this._onMediaInfo(mi);
+        }
+    }
+
+    _parseFlacAudioData(arrayBuffer, dataOffset, dataSize, tagTimestamp) {
+        let track = this._audioTrack;
+
+        let data = new Uint8Array(arrayBuffer, dataOffset, dataSize);
+        let dts = this._timestampBase + tagTimestamp;
+        let flacSample = {unit: data, length: data.byteLength, dts: dts, pts: dts};
+
+        track.samples.push(flacSample);
+        track.length += data.length;
     }
 
     _parseVideoData(arrayBuffer, dataOffset, dataSize, tagTimestamp, tagPosition) {
@@ -1175,7 +1422,7 @@ class FLVDemuxer {
         let version = v.getUint8(0);  // configurationVersion
         let hevcProfile = v.getUint8(1) & 0x1F;  // hevcProfileIndication
 
-        if (version !== 1 || hevcProfile === 0) {
+        if ((version !== 0 && version !== 1) || hevcProfile === 0) {
             this._onError(DemuxErrors.FORMAT_ERROR, 'Flv: Invalid HEVCDecoderConfigurationRecord');
             return;
         }
@@ -1317,16 +1564,11 @@ class FLVDemuxer {
             this._onError(DemuxErrors.FORMAT_ERROR, 'Flv: Invalid AV1CodecConfigurationRecord');
             return;
         }
-        meta.codecWidth = config.codec_size.width;
-        meta.codecHeight = config.codec_size.height;
-        meta.presentWidth = config.present_size.width;
-        meta.presentHeight = config.present_size.height;
 
         meta.profile = config.profile_string;
         meta.level = config.level_string;
         meta.bitDepth = config.bit_depth;
         meta.chromaFormat = config.chroma_format;
-        meta.sarRatio = config.sar_ratio;
         meta.frameRate = config.frame_rate;
         if (config.frame_rate.fixed === false ||
             config.frame_rate.fps_num === 0 ||
@@ -1337,17 +1579,14 @@ class FLVDemuxer {
         let fps_num = meta.frameRate.fps_num;
         meta.refSampleDuration = meta.timescale * (fps_den / fps_num);
         meta.codec = config.codec_mimetype;
+        meta.extra = config;
 
         let mi = this._mediaInfo;
-        mi.width = meta.codecWidth;
-        mi.height = meta.codecHeight;
         mi.fps = meta.frameRate.fps;
         mi.profile = meta.profile;
         mi.level = meta.level;
         mi.refFrames = config.ref_frames;
         mi.chromaFormat = config.chroma_format_string;
-        mi.sarNum = meta.sarRatio.width;
-        mi.sarDen = meta.sarRatio.height;
         mi.videoCodec = config.codec_mimetype;
 
         if (mi.hasAudio) {
@@ -1362,19 +1601,7 @@ class FLVDemuxer {
         }
         meta.av1c = new Uint8Array(dataSize);
         meta.av1c.set(new Uint8Array(arrayBuffer, dataOffset, dataSize), 0);
-        Log.v(this.TAG, 'Parsed AV1CodecConfigurationRecord');
-
-        if (this._isInitialMetadataDispatched()) {
-            // flush parsed frames
-            if (this._dispatch && (this._audioTrack.length || this._videoTrack.length)) {
-                this._onDataAvailable(this._audioTrack, this._videoTrack);
-            }
-        } else {
-            this._videoInitialMetadataDispatched = true;
-        }
-        // notify new metadata
-        this._dispatch = false;
-        this._onTrackMetadata('video', meta);
+        Log.v(this.TAG, 'Preparing AV1CodecConfigurationRecord');
     }
 
     _parseAVCVideoData(arrayBuffer, dataOffset, dataSize, tagTimestamp, tagPosition, frameType, cts) {
@@ -1502,6 +1729,42 @@ class FLVDemuxer {
         let offset = 0;
         let dts = this._timestampBase + tagTimestamp;
         let keyframe = (frameType === 1);  // from FLV Frame Type constants
+
+        if (keyframe) {
+            let meta = this._videoMetadata;
+
+            const config = AV1OBUParser.parseOBUs(new Uint8Array(arrayBuffer, dataOffset, dataSize), meta.extra);
+            if (config == null) {
+                this._onError(DemuxErrors.FORMAT_ERROR, 'Flv: Invalid AV1 VideoData');
+                return;
+            }
+            console.log(config);
+            meta.codecWidth = config.codec_size.width;
+            meta.codecHeight = config.codec_size.height;
+            meta.presentWidth = config.present_size.width;
+            meta.presentHeight = config.present_size.height;
+            meta.sarRatio = config.sar_ratio;
+
+            let mi = this._mediaInfo;
+            mi.width = meta.codecWidth;
+            mi.height = meta.codecHeight;
+            mi.sarNum = meta.sarRatio.width;
+            mi.sarDen = meta.sarRatio.height;
+
+            Log.v(this.TAG, 'Parsed AV1DecoderConfigurationRecord');
+
+            if (this._isInitialMetadataDispatched()) {
+                // flush parsed frames
+                if (this._dispatch && (this._audioTrack.length || this._videoTrack.length)) {
+                    this._onDataAvailable(this._audioTrack, this._videoTrack);
+                }
+            } else {
+                this._videoInitialMetadataDispatched = true;
+            }
+            // notify new metadata
+            this._dispatch = false;
+            this._onTrackMetadata('video', meta);
+        }
 
         /* FIXME: NEEDS Inspect Per OBUs */
         length = dataSize;
